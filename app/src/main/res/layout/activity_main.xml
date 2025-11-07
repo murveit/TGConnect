@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center_horizontal"
+    tools:context=".MainActivity">
+
+    <!-- 1. Connection Buttons -->
+    <Button
+        android:id="@+id/btnConnect"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/connect_amp_start"
+        android:textSize="18sp"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp"
+        />
+    <Button
+        android:id="@+id/btnDisconnect"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/disconnect"
+        android:visibility="gone"
+    />
+    <Button
+        android:id="@+id/btnStartTracking"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/start_tracking"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
+    <!-- 2. Status Text View -->
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/status_ready_please_connect_to_tennis_genius_wifi"
+        android:textSize="14sp"
+        android:textColor="@color/status_blue"
+    android:padding="8dp"
+    android:background="#EFEFEF"
+    android:layout_marginBottom="16dp"
+    />
+
+    <!-- 3. Image View for Display -->
+    <ImageView
+        android:id="@+id/ivImage"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scaleType="fitCenter"
+        android:contentDescription="@string/received_image_from_tennisgenius"
+        android:src="@android:color/transparent"
+    android:background="#CCCCCC"
+    />
+</LinearLayout>

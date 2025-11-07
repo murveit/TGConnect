@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">TGControl</string>
+    <string name="received_image_from_tennisgenius">Received Image from TennisGenius</string>
+    <string name="status_ready_please_connect_to_tennis_genius_wifi">Status: Ready. Please connect to Tennis Genius WiFi.</string>
+    <string name="connect_amp_start"><![CDATA[CONNECT & START]]></string>
+    <string name="disconnect">DISCONNECT</string>
+    <string name="start_tracking">START TRACKING</string>
+</resources>
