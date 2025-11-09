@@ -1,18 +1,10 @@
-// =========================================================================
-// ANDROID CLIENT ACTIVITY (JAVA)
-// Connects to the TennisGenius AP, sends a command, receives status text,
-// and decodes a JPEG image stream for display.
-//
-// CRITICAL REQUIREMENTS:
-//  Ensure the phone is connected to the Jetson's AP network.
-// =========================================================================
-
 package com.murveit.tgcontrol;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.graphics.Bitmap;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -21,6 +13,8 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.io.EOFException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -86,6 +80,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // Clear the image display when starting a new connection
+        mainHandler.post(() -> ivImage.setImageDrawable(null));
+
         // Start a new thread for connection and listening
         communicationThread = new Thread(new CommunicationTask());
         communicationThread.start();
@@ -107,48 +104,34 @@ public class MainActivity extends AppCompatActivity {
 
     // Helper to safely update UI elements from the background thread
     private void updateUIStatus(final String message) {
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                tvStatus.setText(message);
-            }
-        });
+        mainHandler.post(() -> tvStatus.setText(message));
     }
 
     // Helper to safely display the received image on the main thread
     private void displayBitmap(final Bitmap bitmap) {
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (bitmap != null) {
-                    ivImage.setImageBitmap(bitmap);
-                    tvStatus.setText("SUCCESS: Image received and displayed.");
-                } else {
-                    tvStatus.setText("ERROR: Failed to decode image.");
-                }
+        mainHandler.post(() -> {
+            if (bitmap != null) {
+                ivImage.setImageBitmap(bitmap);
+                tvStatus.setText("SUCCESS: Image received and displayed.");
+            } else {
+                tvStatus.setText("ERROR: Failed to decode image.");
             }
         });
     }
 
     // Helper to disable the connect button on the main thread
     private void disableConnectButton() {
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                btnConnect.setEnabled(false);
-                btnConnect.setText("CONNECTING..."); // Optional: Change text for better feedback
-            }
+        mainHandler.post(() -> {
+            btnConnect.setEnabled(false);
+            btnConnect.setText("CONNECTING..."); // Optional: Change text for better feedback
         });
     }
 
     // Helper to enable the connect button on the main thread
     private void enableConnectButton() {
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                btnConnect.setEnabled(true);
-                btnConnect.setText("CONNECT & START TRACKING"); // Optional: Reset text
-            }
+        mainHandler.post(() -> {
+            btnConnect.setEnabled(true);
+            btnConnect.setText("CONNECT & START TRACKING"); // Optional: Reset text
         });
     }
 
@@ -161,7 +144,9 @@ public class MainActivity extends AppCompatActivity {
         // Sending data must also be on a background thread
         new Thread(() -> {
             try {
+                // The command is sent as raw bytes
                 outputStream.write(command.getBytes(StandardCharsets.UTF_8));
+                outputStream.flush(); // Ensure data is sent immediately
                 Log.d(TAG, "Sent command: " + command);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send command", e);
@@ -170,7 +155,53 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    // This is the new, long-lived CommunicationTask
+    /**
+     * Utility method to ensure all requested bytes are read from the InputStream.
+     * This is critical for reading the fixed-length header and the image data block.
+     */
+    private byte[] readFullData(InputStream is, int length) throws IOException {
+        byte[] buffer = new byte[length];
+        int totalRead = 0;
+        
+        // Loop until we have read 'length' bytes
+        while (totalRead < length) {
+            // Read into the buffer, starting from the last position read (totalRead), 
+            // for the remaining number of bytes (length - totalRead).
+            int bytesRead = is.read(buffer, totalRead, length - totalRead);
+            
+            if (bytesRead == -1) {
+                // End of stream reached unexpectedly
+                throw new EOFException("Connection closed prematurely while reading data.");
+            }
+            totalRead += bytesRead;
+        }
+        return buffer;
+    }
+
+    /**
+     * Reads a line of text (until a newline '\n') from the InputStream.
+     * This is needed to correctly consume the variable-length status message from the server.
+     */
+    private String readLineFromStream(InputStream is) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        int c;
+        // Read byte by byte until a newline is found or EOF is reached
+        while ((c = is.read()) != -1) {
+            if (c == '\n') {
+                break;
+            }
+            // Ignore carriage returns in case the server sends \r\n
+            if (c != '\r') {
+                sb.append((char) c);
+            }
+        }
+        // If we hit EOF before reading anything
+        if (sb.length() == 0 && c == -1) {
+             throw new EOFException("Connection closed while waiting for status line.");
+        }
+        return sb.toString().trim();
+    }
+
     private class CommunicationTask implements Runnable {
         @Override
         public void run() {
@@ -194,36 +225,67 @@ public class MainActivity extends AppCompatActivity {
                     updateUIStatus("Connected. Ready to send commands.");
                 });
 
-                // This loop will run as long as the socket is connected
+                // This loop will run as long as the socket is connected and listens for data
+                // Note: Based on the current server logic, this loop will likely run once and then exit 
+                // when the server closes the connection after sending one image.
                 while (socket != null && socket.isConnected() && !Thread.currentThread().isInterrupted()) {
 
-                    // Example: Re-implementing your image receiving logic inside the loop
-                    // This assumes the server sends status and then an image *every time*
-
-                    byte[] statusBytes = new byte[1024];
-                    int statusRead = inputStream.read(statusBytes);
-                    if (statusRead == -1) {
-                        Log.d(TAG, "Server closed the connection.");
-                        break;
-                    }
-                    String statusMessage = new String(statusBytes, 0, statusRead, StandardCharsets.UTF_8);
+                    // === 1. CONSUME STATUS MESSAGE ===
+                    // Read the variable-length status message first.
+                    String statusMessage = readLineFromStream(inputStream);
                     Log.d(TAG, "Received Status: " + statusMessage);
                     updateUIStatus("Status: " + statusMessage);
+                    
+                    // === 2. READ IMAGE DATA ===
 
-                    // Now read the image as before...
-                    byte[] headerBytes = new byte[SIZE_HEADER_LENGTH];
-                    inputStream.read(headerBytes);
-                    // ... and so on for the rest of your image reading logic ...
+                    // 2a. READ IMAGE SIZE HEADER (10 bytes)
+                    byte[] headerBytes = readFullData(inputStream, SIZE_HEADER_LENGTH);
+                    String header = new String(headerBytes, StandardCharsets.UTF_8).trim();
 
-                    // For a real app, you would have a more complex loop here that can
-                    // handle different types of messages from the server.
+                    // 2b. PARSE IMAGE SIZE
+                    int imageSize = 0;
+                    try {
+                        imageSize = Integer.parseInt(header);
+                        if (imageSize <= 0) {
+                            Log.e(TAG, "Received invalid image size: " + imageSize);
+                            updateUIStatus("Error: Received invalid image size header.");
+                            continue; // Skip to next loop iteration
+                        }
+                    } catch (NumberFormatException e) {
+                        Log.e(TAG, "Failed to parse size header: " + header, e);
+                        updateUIStatus("Error: Malformed image size header received.");
+                        // Unrecoverable synchronization error, break the loop
+                        break; 
+                    }
+
+                    Log.d(TAG, "Received image size: " + imageSize + " bytes.");
+                    updateUIStatus("Receiving image of " + imageSize + " bytes...");
+
+                    // 2c. READ IMAGE DATA (raw JPEG bytes)
+                    byte[] imageBytes = readFullData(inputStream, imageSize);
+                    Log.d(TAG, "Successfully read " + imageBytes.length + " bytes of image data.");
+
+                    // 2d. DECODE BYTES TO BITMAP
+                    // Use BitmapFactory to decode the raw JPEG byte array into a displayable bitmap
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+
+                    // 2e. DISPLAY BITMAP
+                    displayBitmap(bitmap);
+                    
+                    // Since the server closes the connection after sending the image, 
+                    // we break the loop here to handle the expected disconnect gracefully.
+                    //////break;
                 }
             } catch (java.net.SocketTimeoutException e) {
                 Log.e(TAG, "Connection timed out. Assuming connection is lost.", e);
                 updateUIStatus("Error: Connection lost (timeout).");
+            } catch (EOFException e) {
+                // Connection closed while reading the stream
+                Log.d(TAG, e.getMessage(), e);
+                updateUIStatus("Server disconnected.");
             } catch (Exception e) {
-                // This will catch connection timeouts, or errors during the read loop (like if the socket is closed)
-                if (!socket.isClosed()) {
+                // This will catch connection errors or errors during the read loop
+                if (socket == null || !socket.isClosed()) {
                     Log.e(TAG, "Communication Error", e);
                     updateUIStatus("Connection Error: " + e.getMessage());
                 } else {
@@ -232,7 +294,7 @@ public class MainActivity extends AppCompatActivity {
                     updateUIStatus("Disconnected.");
                 }
             } finally {
-                // Cleanup: Close streams and socket if they are still open
+                // Ensure all streams and the socket are closed
                 try {
                     if (outputStream != null) outputStream.close();
                     if (inputStream != null) inputStream.close();
@@ -247,13 +309,12 @@ public class MainActivity extends AppCompatActivity {
                     btnDisconnect.setVisibility(View.GONE);
                     btnStartTracking.setVisibility(View.GONE);
                     enableConnectButton(); // Re-enable the connect button
-                    if (tvStatus.getText().toString().contains("Error")) {
-                        // Don't overwrite the error message
-                    } else {
+                    if (!tvStatus.getText().toString().contains("Error") && !tvStatus.getText().toString().contains("Disconnected")) {
+                        // Only reset status if it wasn't an error or intentional disconnect message
                         updateUIStatus("Ready.\nConnect to TennisGenius AP WiFi.");
                     }
                 });
-                communicationThread = null; // Clear the thread reference
+                communicationThread = null;
             }
         }
     }
