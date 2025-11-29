@@ -9,53 +9,83 @@
     android:gravity="center_horizontal"
     tools:context=".MainActivity">
 
-    <!-- 1. Connection Buttons -->
-    <Button
-        android:id="@+id/btnConnect"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/connect_amp_start"
-        android:textSize="18sp"
-        android:padding="12dp"
-        android:layout_marginBottom="16dp"
-        />
-    <Button
-        android:id="@+id/btnDisconnect"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/disconnect"
-        android:visibility="gone"
-    />
-    <Button
-        android:id="@+id/btnStartTracking"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/start_tracking"
-        android:layout_marginTop="8dp"
-        android:visibility="gone" />
-
-    <!-- 2. Status Text View -->
+    <!-- Status Text -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/status_ready_please_connect_to_tennis_genius_wifi"
-        android:textSize="14sp"
-        android:textColor="@color/status_blue"
-    android:padding="8dp"
-    android:background="#EFEFEF"
-    android:layout_marginBottom="16dp"
-    />
+        android:text="Ready. Connect to server."
+        android:textSize="16sp"
+        android:paddingBottom="8dp" />
 
-    <!-- 3. Image View for Display -->
+    <!-- Connection Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingBottom="16dp">
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="CONNECT" />
+
+        <Button
+            android:id="@+id/btnDisconnect"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="DISCONNECT"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Tracking Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingBottom="16dp">
+
+        <Button
+            android:id="@+id/btnStartTracking"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="START TRACKING"
+            android:visibility="gone"
+            android:enabled="false"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btnStopTracking"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="STOP TRACKING"
+            android:visibility="gone"
+            android:enabled="false"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+    <!-- Single Shot Control -->
+    <Button
+        android:id="@+id/btnSendSingleImage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SEND SINGLE IMAGE"
+        android:visibility="gone"
+        android:enabled="false"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Image View -->
     <ImageView
         android:id="@+id/ivImage"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:scaleType="fitCenter"
-        android:contentDescription="@string/received_image_from_tennisgenius"
-        android:src="@android:color/transparent"
-    android:background="#CCCCCC"
-    />
+        android:background="#CCCCCC"
+        android:contentDescription="Received image frame" />
 </LinearLayout>
