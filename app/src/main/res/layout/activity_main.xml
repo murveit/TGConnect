@@ -1,91 +1,180 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
-    android:gravity="center_horizontal"
+    android:fitsSystemWindows="true"
     tools:context=".MainActivity">
 
-    <!-- Status Text -->
-    <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Ready. Connect to server."
-        android:textSize="16sp"
-        android:paddingBottom="8dp" />
-
-    <!-- Connection Controls -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingBottom="16dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <Button
-            android:id="@+id/btnConnect"
-            android:layout_width="0dp"
+        <!-- Connection Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="CONNECT" />
+            android:orientation="horizontal"
+            android:paddingBottom="8dp">
 
-        <Button
-            android:id="@+id/btnDisconnect"
-            android:layout_width="0dp"
+            <Button
+                android:id="@+id/btnConnect"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="CONNECT" />
+
+            <Button
+                android:id="@+id/btnDisconnect"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="DISCONNECT"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Compact Resolution and Format Controls on a single line -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Resolution Radio Group -->
+            <RadioGroup
+                android:id="@+id/rgResolution"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rb4K"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="4K" />
+
+                <RadioButton
+                    android:id="@+id/rbHD"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="HD" />
+            </RadioGroup>
+
+            <!-- Format Radio Group -->
+            <RadioGroup
+                android:id="@+id/rgFormat"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbJPEG"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="JPEG" />
+
+                <RadioButton
+                    android:id="@+id/rbRAW"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="RAW" />
+            </RadioGroup>
+        </LinearLayout>
+
+
+        <!-- Compact JPEG Quality SeekBar on a single line -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/tvJpegQualityLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:text="Quality: 90" />
+
+            <SeekBar
+                android:id="@+id/sbJpegQuality"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:layout_toEndOf="@id/tvJpegQualityLabel"
+                android:max="99"
+                android:progress="89" />
+        </RelativeLayout>
+
+        <!-- Status Text Lines -->
+        <TextView
+            android:id="@+id/tvStatus1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status:"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/tvStatus2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            tools:text="Line 2" />
+        <TextView
+            android:id="@+id/tvStatus3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="16dp"
+            tools:text="Line 3" />
+
+        <!-- NEW: Action Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/btnStartRecording"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="Start Recording"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnCapturePhotos"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="Capture Photos"
+                android:visibility="gone" />
+        </LinearLayout>
+
+
+        <!-- Image View -->
+        <ImageView
+            android:id="@+id/ivImage"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:text="DISCONNECT"
-            android:visibility="gone" />
+            android:background="#CCCCCC"
+            android:contentDescription="Received image frame"
+            android:scaleType="fitCenter" />
     </LinearLayout>
 
-    <!-- Tracking Controls -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingBottom="16dp">
-
-        <Button
-            android:id="@+id/btnStartTracking"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="START TRACKING"
-            android:visibility="gone"
-            android:enabled="false"
-            android:layout_marginEnd="4dp" />
-
-        <Button
-            android:id="@+id/btnStopTracking"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="STOP TRACKING"
-            android:visibility="gone"
-            android:enabled="false"
-            android:layout_marginStart="4dp" />
-    </LinearLayout>
-
-    <!-- Single Shot Control -->
-    <Button
-        android:id="@+id/btnSendSingleImage"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="SEND SINGLE IMAGE"
-        android:visibility="gone"
-        android:enabled="false"
-        android:layout_marginBottom="16dp" />
-
-    <!-- Image View -->
-    <ImageView
-        android:id="@+id/ivImage"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scaleType="fitCenter"
-        android:background="#CCCCCC"
-        android:contentDescription="Received image frame" />
-</LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
