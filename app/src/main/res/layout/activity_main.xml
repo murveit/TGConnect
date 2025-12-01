@@ -127,15 +127,8 @@
             android:layout_height="wrap_content"
             android:paddingStart="8dp"
             android:paddingEnd="8dp"
-            tools:text="Line 2" />
-        <TextView
-            android:id="@+id/tvStatus3"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
             android:paddingBottom="16dp"
-            tools:text="Line 3" />
+            tools:text="Line 2"/>
 
         <!-- NEW: Action Controls -->
         <LinearLayout
