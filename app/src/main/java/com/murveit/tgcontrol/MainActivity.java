@@ -52,10 +52,10 @@ public class MainActivity extends AppCompatActivity {
     private RadioButton rb4K; // rbHD, rbJPEG, rbRAW are not needed as member variables
     private TextView tvJpegQualityLabel;
     private SeekBar sbJpegQuality;
-    private TextView tvStatus1, tvStatus2; // tvStatus3 removed
+    private TextView tvStatus1, tvStatus2;
     private Button btnStartRecording;
     private Button btnCapturePhotos;
-    private ImageView ivImage;
+    private ImageView ivImage1, ivImage2; // NEW: Two ImageViews
 
 
     private Socket socket;
@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private InputStream inputStream;
     private volatile boolean isRunning = false;
     private volatile boolean isRecording = false; // Flag to track recording state
-    private long recordingStartTime = 0; // NEW: To track elapsed time
+    private long recordingStartTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,10 +81,10 @@ public class MainActivity extends AppCompatActivity {
         sbJpegQuality = findViewById(R.id.sbJpegQuality);
         tvStatus1 = findViewById(R.id.tvStatus1);
         tvStatus2 = findViewById(R.id.tvStatus2);
-        // tvStatus3 removed
         btnStartRecording = findViewById(R.id.btnStartRecording);
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
-        ivImage = findViewById(R.id.ivImage);
+        ivImage1 = findViewById(R.id.ivImage1); // NEW
+        ivImage2 = findViewById(R.id.ivImage2); // NEW
 
         mainHandler = new Handler(Looper.getMainLooper());
 
@@ -132,14 +132,10 @@ public class MainActivity extends AppCompatActivity {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 tvJpegQualityLabel.setText("Quality: " + (progress + 1));
             }
-
             @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
+            public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
+            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
@@ -151,7 +147,11 @@ public class MainActivity extends AppCompatActivity {
             updateUIStatus("Status", "Already connecting or connected.");
             return;
         }
-        mainHandler.post(() -> ivImage.setImageDrawable(null));
+        // UPDATED: Clear both image views
+        mainHandler.post(() -> {
+            ivImage1.setImageDrawable(null);
+            ivImage2.setImageDrawable(null);
+        });
         isRunning = true;
         isRecording = false; // Reset recording state on new connection
         communicationThread = new Thread(new CommunicationTask());
@@ -192,10 +192,7 @@ public class MainActivity extends AppCompatActivity {
             btnStartRecording.setEnabled(isConnected);
             btnCapturePhotos.setEnabled(isConnected);
 
-            // --- CHANGE ---
-            // The logic to disable settings is REMOVED from this method.
-            // It's now handled by updateRecordingButtons.
-            // On disconnect, we must re-enable them.
+            // On disconnect, we must re-enable the settings.
             if (!isConnected) {
                 setSettingsEnabled(true);
             }
@@ -205,7 +202,7 @@ public class MainActivity extends AppCompatActivity {
     // New helper to manage recording button state
     private void updateRecordingButtons(boolean isCurrentlyRecording) {
         mainHandler.post(() -> {
-            setSettingsEnabled(!isCurrentlyRecording); // <<< THE FIX IS HERE
+            setSettingsEnabled(!isCurrentlyRecording);
 
             if (isCurrentlyRecording) {
                 btnStartRecording.setText("Stop Recording");
@@ -219,7 +216,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Helper method to enable or disable all the settings controls at once.
-     *
      * @param enabled true to enable, false to disable.
      */
     private void setSettingsEnabled(boolean enabled) {
@@ -232,10 +228,11 @@ public class MainActivity extends AppCompatActivity {
         sbJpegQuality.setEnabled(enabled);
     }
 
-    private void displayBitmap(final Bitmap bitmap) {
+    // UPDATED: Now draws the bitmap on the specified ImageView
+    private void displayBitmap(final Bitmap bitmap, final ImageView targetImageView) {
         mainHandler.post(() -> {
             if (bitmap != null) {
-                ivImage.setImageBitmap(bitmap);
+                targetImageView.setImageBitmap(bitmap); // Draw on the specified image view
                 String msg = isRecording ? "SUCCESS: Recording frame..." : "SUCCESS: Photo received.";
                 updateUIStatus("Status: OK", msg);
             } else {
@@ -262,7 +259,6 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    // ... (readFullData and readLineFromStream methods remain the same) ...
     private byte[] readFullData(InputStream is, int length) throws IOException {
         byte[] buffer = new byte[length];
         int bytesRead = 0;
@@ -317,17 +313,15 @@ public class MainActivity extends AppCompatActivity {
 
                 while (isRunning && socket != null && socket.isConnected() && !Thread.currentThread().isInterrupted()) {
                     try {
-                        // The loop now just listens for any incoming data (like images or status lines
                         String serverMessage = readLineFromStream(inputStream);
                         Log.d(TAG, "Received from server: " + serverMessage);
 
-                        // --- NEW MESSAGE HANDLING LOGIC ---
-                        if (serverMessage.startsWith("STATUS: PHOTO_CAPTURE_INITIATED")) {
-
-                        } else if (serverMessage.startsWith("STATUS:")) {
-                            String status = serverMessage.substring("STATUS:".length()).trim();
-                            updateUIStatus(null, status); // Update line 2
-
+                        // --- UPDATED MESSAGE HANDLING LOGIC ---
+                        if (serverMessage.equals("STATUS: CAPTURE_DONE; SENDING_IMAGES")) {
+                            // This specific status means two images are coming.
+                            updateUIStatus(null, "Receiving captured images...");
+                            receiveImageFrame(ivImage1); // Receive first image for the top view
+                            receiveImageFrame(ivImage2); // Receive second image for the bottom view
                         } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
                             String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
                             String[] parts = data.split(",");
@@ -337,35 +331,38 @@ public class MainActivity extends AppCompatActivity {
                                     int framesWritten = Integer.parseInt(parts[1].trim());
                                     float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
 
-                                    // Calculate elapsed time
                                     long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
                                     long seconds = (elapsedMillis / 1000) % 60;
                                     long minutes = (elapsedMillis / (1000 * 60)) % 60;
                                     String elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
 
-                                    // Format the final string and update the UI
                                     String framesStatus = String.format(Locale.US, "Frames: %5d %5d | Time %s | Free Disk %.1f Gb",
                                             framesProcessed, framesWritten, elapsedTime, freeSpaceGb);
-                                    updateUIStatus(null, framesStatus); // Update line 2
+                                    updateUIStatus(null, framesStatus);
 
                                 } catch (NumberFormatException e) {
                                     Log.e(TAG, "Failed to parse STATUS_FRAMES data: " + data, e);
                                     updateUIStatus(null, "Error parsing frame data");
                                 }
                             }
+                        } else if (serverMessage.startsWith("STATUS:")) {
+                            String status = serverMessage.substring("STATUS:".length()).trim();
+                            updateUIStatus(null, status);
                         } else if (serverMessage.startsWith("IMAGE_SIZE")) {
-                            // This is a simplified example; your server might send a header then the image
-                            receiveImageFrame(false); // Assuming an image follows this message
+                            // This handles the case of a single image being sent during recording
+                            receiveImageFrame(ivImage1);
                         } else {
-                            // It's a general status message that doesn't fit the other categories
-                            updateUIStatus(null, serverMessage); // Update line 2
+                            // Only if it matches none of the above, treat it as a general message.
+                            if (!serverMessage.isEmpty()) {
+                                updateUIStatus(null, serverMessage);
+                            }
                         }
-                        // --- END NEW MESSAGE HANDLING LOGIC ---
+                        // --- END OF LOGIC ---
 
                     } catch (SocketTimeoutException ignored) {
-                        // This is expected. The timeout allows the loop to check the isRunning flag.
+                        // This is expected and normal. Allows the loop to check the isRunning flag.
                     } catch (IOException e) {
-                        if (isRunning) throw e; // Re-throw error if we weren't trying to shut down
+                        if(isRunning) throw e;
                     }
                 }
 
@@ -399,12 +396,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void receiveImageFrame(boolean isContinuous) throws IOException {
-        // This method can be simplified now if the server logic is consistent
-        try {
-            socket.setSoTimeout(5000);
-        } catch (Exception e) { /* ignore */ }
+    // --- THE FIX IS HERE ---
+    private void receiveImageFrame(final ImageView targetImageView) throws IOException {
+        try { socket.setSoTimeout(5000); } catch (Exception e) { /* ignore */ }
 
+        // READ THE 10-BYTE HEADER DIRECTLY. DO NOT READ A LINE.
         byte[] headerBytes = readFullData(inputStream, SIZE_HEADER_LENGTH);
         String headerStr = new String(headerBytes, StandardCharsets.UTF_8).trim();
         int imageSize;
@@ -412,7 +408,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             imageSize = Integer.parseInt(headerStr);
         } catch (NumberFormatException e) {
-            throw new IOException("Malformed image size header received: " + headerStr);
+            throw new IOException("Malformed image size header received: '" + headerStr + "'");
         }
 
         if (imageSize <= 0) {
@@ -422,11 +418,8 @@ public class MainActivity extends AppCompatActivity {
 
         byte[] imageBytes = readFullData(inputStream, imageSize);
         Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-        displayBitmap(bitmap);
+        displayBitmap(bitmap, targetImageView); // Pass the target view to displayBitmap
 
-        // Reset timeout to the short-polling value
-        try {
-            socket.setSoTimeout(500);
-        } catch (Exception e) { /* ignore */ }
+        try { socket.setSoTimeout(500); } catch (Exception e) { /* ignore */ }
     }
 }
