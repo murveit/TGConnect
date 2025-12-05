@@ -32,29 +32,29 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <!-- 3. The ConstraintLayout no longer needs any special padding -->
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:padding="16dp">
-
+            
             <TextView
                 android:id="@+id/tvTargetLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Host Network"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toTopOf="@id/spnConnectionTarget"
+                app:layout_constraintBottom_toBottomOf="@id/spnConnectionTarget" />
 
             <Spinner
                 android:id="@+id/spnConnectionTarget"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginStart="8dp"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvTargetLabel" />
-
+                app:layout_constraintStart_toEndOf="@id/tvTargetLabel"
+                app:layout_constraintTop_toTopOf="parent" />
+            <!-- Exposure -->
             <TextView
                 android:id="@+id/tvExposureLabel"
                 android:layout_width="wrap_content"
@@ -68,11 +68,13 @@
                 android:id="@+id/etExposure"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:ems="9"
                 android:inputType="number"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvExposureLabel" />
+                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLabel"
+                app:layout_constraintStart_toEndOf="@id/tvExposureLabel" />
 
+            <!-- Gain -->
             <TextView
                 android:id="@+id/tvGainLabel"
                 android:layout_width="wrap_content"
@@ -86,31 +88,31 @@
                 android:id="@+id/etGain"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:ems="4"
-                android:hint="10.1"
                 android:inputType="numberDecimal"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvGainLabel" />
+                app:layout_constraintBaseline_toBaselineOf="@id/tvGainLabel"
+                app:layout_constraintStart_toEndOf="@id/tvGainLabel" />
 
+            <!-- Digital Gain -->
             <TextView
                 android:id="@+id/tvDigitalGainLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
                 android:text="Digital Gain"
-                app:layout_constraintStart_toEndOf="@id/etGain"
-                app:layout_constraintTop_toTopOf="@id/tvGainLabel" />
+                app:layout_constraintBaseline_toBaselineOf="@id/tvGainLabel"
+                app:layout_constraintStart_toEndOf="@id/etGain" />
 
             <EditText
                 android:id="@+id/etDigitalGain"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:ems="4"
-                android:hint="10.1"
                 android:inputType="numberDecimal"
-                app:layout_constraintStart_toStartOf="@id/tvDigitalGainLabel"
-                app:layout_constraintTop_toBottomOf="@id/tvDigitalGainLabel" />
-
+                app:layout_constraintBaseline_toBaselineOf="@id/tvDigitalGainLabel"
+                app:layout_constraintStart_toEndOf="@id/tvDigitalGainLabel" />
 
             <!-- JPEG Quality Slider -->
             <TextView
@@ -128,9 +130,10 @@
                 android:layout_height="wrap_content"
                 android:max="99"
                 android:progress="0"
+                app:layout_constraintBottom_toBottomOf="@id/tvJpegQualityLabel"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvJpegQualityLabel" />
+                app:layout_constraintStart_toEndOf="@id/tvJpegQualityLabel"
+                app:layout_constraintTop_toTopOf="@id/tvJpegQualityLabel" />
 
             <!-- Exposure Compensation Slider -->
             <TextView
@@ -140,7 +143,7 @@
                 android:layout_marginTop="16dp"
                 android:text="Exp Comp: +0.00"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/sbJpegQuality" />
+                app:layout_constraintTop_toBottomOf="@id/tvJpegQualityLabel" />
 
             <SeekBar
                 android:id="@+id/sbExpComp"
@@ -148,11 +151,12 @@
                 android:layout_height="wrap_content"
                 android:max="16"
                 android:progress="8"
+                app:layout_constraintBottom_toBottomOf="@id/tvExpCompLabel"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvExpCompLabel" />
+                app:layout_constraintStart_toEndOf="@id/tvExpCompLabel"
+                app:layout_constraintTop_toTopOf="@id/tvExpCompLabel" />
 
-            <!-- AE and AWB Locks (MOVED TO BOTTOM) -->
+            <!-- AE and AWB Locks -->
             <CheckBox
                 android:id="@+id/cbAeLock"
                 android:layout_width="wrap_content"
@@ -160,7 +164,7 @@
                 android:layout_marginTop="24dp"
                 android:text="AE Lock"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/sbExpComp" />
+                app:layout_constraintTop_toBottomOf="@id/tvExpCompLabel" />
 
             <CheckBox
                 android:id="@+id/cbAwbLock"
@@ -172,5 +176,6 @@
                 app:layout_constraintTop_toTopOf="@id/cbAeLock" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
+
     </ScrollView>
 </LinearLayout>
