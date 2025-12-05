@@ -5,16 +5,28 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
+    android:padding="16dp"
+    android:fitsSystemWindows="true"
     tools:context=".SettingsActivity">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
+        android:layout_marginStart="-16dp"
+        android:layout_marginEnd="-16dp"
         android:background="?attr/colorPrimary"
         android:elevation="4dp"
-        app:title="Settings"
-        app:titleTextColor="?attr/colorOnPrimary" />
+        style="@style/App.Toolbar">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Settings"
+            android:layout_gravity="center"
+            android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Title"
+            android:textColor="?attr/colorOnPrimary" />
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <ScrollView
         android:layout_width="match_parent"

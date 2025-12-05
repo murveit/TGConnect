@@ -5,6 +5,9 @@
         <item name="colorPrimary">@color/primary_dark</item>
         <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
     </style>
-
+    <style name="App.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="titleTextColor">?attr/colorOnPrimary</item>
+        <item name="navigationIconTint">?attr/colorOnPrimary</item>
+    </style>
     <style name="Theme.TGControl" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>
