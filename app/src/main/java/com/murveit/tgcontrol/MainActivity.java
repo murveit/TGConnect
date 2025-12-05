@@ -1,11 +1,13 @@
 package com.murveit.tgcontrol;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -38,8 +40,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String Emulator_HOST = "10.0.2.2";
     // Use 10.42.0.1 when the phone is on the TG_AP network.
     private static final String TG_AP_HOST = "10.42.0.1";
+    private static final String TG_CHICO_HOST = "192.168.86.43";
     // Use localhost when debugging with a mock server and client on same machine.
-    private static final String MOCK_HOST = "localhost";
+    private static final String LOCAL_HOST = "localhost";
     private static final String TennisGenius_HOST = TG_AP_HOST;
     private static final int TennisGenius_PORT = 8000;
     private static final int CONNECTION_TIMEOUT_MS = 5000; // 5 seconds
@@ -48,7 +51,6 @@ public class MainActivity extends AppCompatActivity {
     // Commands for server communication
     private static final String CMD_START_RECORDING = "START_RECORDING:%s,%s,ExpComp=%.2f\n";
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
-    private static final String CMD_CAPTURE_PHOTO = "CAPTURE_PHOTO:%s,%s,0.25,ExpComp=%.2f\n";
     private static final String CMD_SHUTDOWN_SYSTEM = "SHUTDOWN_SYSTEM\n";
 
 
@@ -108,45 +110,147 @@ public class MainActivity extends AppCompatActivity {
         // --- NEW BUTTON LOGIC ---
         btnStartRecording.setOnClickListener(v -> {
             if (!isRecording) {
-                // Currently stopped, so START recording
                 isRecording = true; // Set state immediately for UI responsiveness
                 recordingStartTime = System.currentTimeMillis(); // CAPTURE START TIME
                 updateRecordingButtons(true);
 
-                // Get settings from UI
-                String resolution = rb4K.isChecked() ? "4K" : "HD";
-                String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
-                float expCompValue = -100; // Get ExpComp value from slider
-                // Format and send command
-                String command = String.format(Locale.US, CMD_START_RECORDING, resolution, format, expCompValue);
+                String command = buildStartRecordingCommand();
                 sendCommand(command);
-
             } else {
                 // Currently recording, so STOP
-                isRecording = false; // Set state immediately
+                isRecording = false;
                 updateRecordingButtons(false);
                 sendCommand(CMD_STOP_RECORDING);
             }
         });
 
         btnCapturePhotos.setOnClickListener(v -> {
-            // Get settings from UI
-            String resolution = rb4K.isChecked() ? "4K" : "HD";
-            String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
-            // Get ExpComp value from slider (progress 0-16 -> -2.0 to +2.0)
-            float expCompValue = -100;
-
-            // Format and send command
-            String command = String.format(Locale.US, CMD_CAPTURE_PHOTO, resolution, format, expCompValue);
+            String command = buildCaptureCommand();
             sendCommand(command);
 
-            // Clear the image views for immediate feedback
             ivImage1.setImageDrawable(null);
             ivImage2.setImageDrawable(null);
         });
 
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
         updateControlButtons(false); // Initial state is disconnected
+    }
+
+    // [Client-53760] Received Command: START_RECORDING (Params: 4K,JPEG,exp_comp=0.0,gain=1.0,digital_gain=1.0,exposure=33333,aelock=0,awblock=0)
+    //
+    // command = (
+    //                f"START_RECORDING:{mode},{encoding},"
+    //                f"exp_comp={self.exposure_compensation.get()},"
+    //                f"gain={self.gain.get()},"
+    //                f"digital_gain={self.digital_gain.get()},"
+    //                f"exposure={self.exposure.get()},"
+    //                f"aelock={int(self.ae_lock.get())}," # Convert boolean to 0/1 integer
+    //                f"awblock={int(self.awb_lock.get())}" # Convert boolean to 0/1 integer
+    //            )
+    private String buildStartRecordingCommand() {
+        // --- Values from SettingsActivity ---
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
+        boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
+        long exposure = prefs.getLong(SettingsActivity.KEY_EXPOSURE, 33333L);
+        float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
+        float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
+        int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
+        float expCompValue = (expCompProgress - 8) * 0.25f;
+
+        // --- Values from MainActivity UI ---
+        String mode = rb4K.isChecked() ? "4K" : "HD";
+        String encoding = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
+
+        StringBuilder commandBuilder = new StringBuilder();
+        commandBuilder.append("START_RECORDING:");
+        commandBuilder.append(mode);
+        commandBuilder.append(",");
+        commandBuilder.append(encoding);
+        commandBuilder.append(",exp_comp=");
+        commandBuilder.append(expCompValue);
+        commandBuilder.append(",gain=");
+        commandBuilder.append(gain);
+        commandBuilder.append(",digital_gain=");
+        commandBuilder.append(digitalGain);
+        commandBuilder.append(",exposure=");
+        commandBuilder.append(exposure);
+        commandBuilder.append(",aelock=");
+        commandBuilder.append(aeLock ? 1 : 0);
+        commandBuilder.append(",awblock=");
+        commandBuilder.append(awbLock ? 1 : 0);
+        commandBuilder.append("\n");
+        return commandBuilder.toString();
+    }
+
+    private String getServerAddress() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        // Get the saved integer position of the spinner, defaulting to 2 (TG_AP)
+        int targetPosition = prefs.getInt(SettingsActivity.KEY_CONNECTION_TARGET, 2);
+
+        // Get the array of names from strings.xml
+        String[] networkNames = getResources().getStringArray(R.array.connection_options);
+        String networkName = networkNames[targetPosition];
+
+        switch (networkName) {
+            case "Localhost":
+                return LOCAL_HOST;
+            case "TG_AP":
+                return TennisGenius_HOST;
+            case "Emulator":
+                return Emulator_HOST;
+            case "Chico":
+                return TG_CHICO_HOST;
+            default:
+                return LOCAL_HOST;
+        }
+    }
+        // [Client-53760] Received Command: CAPTURE_PHOTO (Params: 4K,JPEG,0.25,exp_comp=0.0,gain=1.0,digital_gain=1.0,exposure=33333,aelock=0,awblock=0)
+    //
+    //command = (
+    //            f"CAPTURE_PHOTO:{mode},{encoding},"
+    //            f"{scale_factor},exp_comp={self.exposure_compensation.get()},"
+    //            f"gain={self.gain.get()},digital_gain=self.digital_gain.get()},"
+    //            f"exposure={self.exposure.get()},aelock={int(self.ae_lock.get())},"
+    //            f"awblock={int(self.awb_lock.get())}"
+    //        )
+    private String buildCaptureCommand() {
+        // --- Values from SettingsActivity ---
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
+        boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
+        long exposure = prefs.getLong(SettingsActivity.KEY_EXPOSURE, 33333L);
+        float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
+        float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
+        int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
+        float expCompValue = (expCompProgress - 8) * 0.25f;
+
+        // --- Values from MainActivity UI ---
+        String mode = rb4K.isChecked() ? "4K" : "HD";
+        String encoding = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
+        float scaleFactor = 0.25f; // This seems to be a fixed value in your example
+
+        StringBuilder commandBuilder = new StringBuilder();
+        commandBuilder.append("CAPTURE_PHOTO:");
+        commandBuilder.append(mode);
+        commandBuilder.append(",");
+        commandBuilder.append(encoding);
+        commandBuilder.append(",");
+        commandBuilder.append(scaleFactor);
+        commandBuilder.append(",exp_comp=");
+        commandBuilder.append(expCompValue);
+        commandBuilder.append(",gain=");
+        commandBuilder.append(gain);
+        commandBuilder.append(",digital_gain=");
+        commandBuilder.append(digitalGain);
+        commandBuilder.append(",exposure=");
+        commandBuilder.append(exposure);
+        commandBuilder.append(",aelock=");
+        commandBuilder.append(aeLock ? 1 : 0);
+        commandBuilder.append(",awblock=");
+        commandBuilder.append(awbLock ? 1 : 0);
+        commandBuilder.append("\n");
+        return commandBuilder.toString();
     }
 
     private void showPowerOffDialog() {
@@ -326,7 +430,9 @@ public class MainActivity extends AppCompatActivity {
             try {
                 mainHandler.post(() -> updateUIStatus("Status:", "Connecting..."));
                 socket = new Socket();
-                socket.connect(new java.net.InetSocketAddress(TennisGenius_HOST, TennisGenius_PORT), CONNECTION_TIMEOUT_MS);
+                String address = getServerAddress();
+                Log.d(TAG, "Trying to connect to: " + address + ":" + TennisGenius_PORT);
+                socket.connect(new java.net.InetSocketAddress(getServerAddress(), TennisGenius_PORT), CONNECTION_TIMEOUT_MS);
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
                 socket.setSoTimeout(500);

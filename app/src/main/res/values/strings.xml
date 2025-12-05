@@ -5,4 +5,10 @@
     <string name="connect_amp_start"><![CDATA[CONNECT & START]]></string>
     <string name="disconnect">DISCONNECT</string>
     <string name="start_tracking">START TRACKING</string>
+    <string-array name="connection_options">
+        <item>Localhost</item>
+        <item>Chico</item>
+        <item>TG_AP</item>
+        <item>Emulator</item>
+    </string-array>
 </resources>
