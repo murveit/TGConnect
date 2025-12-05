@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".SettingsActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorPrimary"
+        android:elevation="4dp"
+        app:title="Settings"
+        app:titleTextColor="?attr/colorOnPrimary" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- 3. The ConstraintLayout no longer needs any special padding -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp">
+
+            <!-- Exposure Entry (Now at the top) -->
+            <TextView
+                android:id="@+id/tvExposureLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Exposure"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <EditText
+                android:id="@+id/etExposure"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ems="9"
+                android:inputType="number"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvExposureLabel" />
+
+            <!-- ... PASTE THE REST OF YOUR WIDGETS (Gain, SeekBars, CheckBoxes) HERE ... -->
+            <!-- They remain exactly the same as before -->
+
+            <!-- Gain and Digital Gain -->
+            <TextView
+                android:id="@+id/tvGainLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Gain (%)"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/etExposure" />
+
+            <EditText
+                android:id="@+id/etGain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ems="4"
+                android:hint="10.1"
+                android:inputType="numberDecimal"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvGainLabel" />
+
+            <TextView
+                android:id="@+id/tvDigitalGainLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:text="Digital Gain (%)"
+                app:layout_constraintStart_toEndOf="@id/etGain"
+                app:layout_constraintTop_toTopOf="@id/tvGainLabel" />
+
+            <EditText
+                android:id="@+id/etDigitalGain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ems="4"
+                android:hint="10.1"
+                android:inputType="numberDecimal"
+                app:layout_constraintStart_toStartOf="@id/tvDigitalGainLabel"
+                app:layout_constraintTop_toBottomOf="@id/tvDigitalGainLabel" />
+
+
+            <!-- JPEG Quality Slider -->
+            <TextView
+                android:id="@+id/tvJpegQualityLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Quality: 1"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/etGain" />
+
+            <SeekBar
+                android:id="@+id/sbJpegQuality"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:max="99"
+                android:progress="0"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvJpegQualityLabel" />
+
+            <!-- Exposure Compensation Slider -->
+            <TextView
+                android:id="@+id/tvExpCompLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Exp Comp: +0.00"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/sbJpegQuality" />
+
+            <SeekBar
+                android:id="@+id/sbExpComp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:max="16"
+                android:progress="8"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvExpCompLabel" />
+
+            <!-- AE and AWB Locks (MOVED TO BOTTOM) -->
+            <CheckBox
+                android:id="@+id/cbAeLock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="AE Lock"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/sbExpComp" />
+
+            <CheckBox
+                android:id="@+id/cbAwbLock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:text="AWB Lock"
+                app:layout_constraintStart_toEndOf="@id/cbAeLock"
+                app:layout_constraintTop_toTopOf="@id/cbAeLock" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </ScrollView>
+</LinearLayout>

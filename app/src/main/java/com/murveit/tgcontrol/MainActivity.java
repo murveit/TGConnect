@@ -1,5 +1,6 @@
 package com.murveit.tgcontrol;
 
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
@@ -58,16 +59,12 @@ public class MainActivity extends AppCompatActivity {
     private Button btnDisconnect;
     private RadioGroup rgResolution, rgFormat;
     private RadioButton rb4K;
-    private TextView tvJpegQualityLabel;
-    private SeekBar sbJpegQuality;
     private TextView tvStatus1, tvStatus2;
     private Button btnStartRecording;
     private Button btnCapturePhotos;
     private ImageView ivImage1, ivImage2;
     private ImageButton btnPowerOff;
-    private SeekBar sbExpComp;
-    private TextView tvExpCompLabel;
-
+    private ImageButton btnSettings;
 
     private Socket socket;
     private Thread communicationThread = null;
@@ -88,17 +85,14 @@ public class MainActivity extends AppCompatActivity {
         rgResolution = findViewById(R.id.rgResolution);
         rgFormat = findViewById(R.id.rgFormat);
         rb4K = findViewById(R.id.rb4K);
-        tvJpegQualityLabel = findViewById(R.id.tvJpegQualityLabel);
-        sbJpegQuality = findViewById(R.id.sbJpegQuality);
         tvStatus1 = findViewById(R.id.tvStatus1);
         tvStatus2 = findViewById(R.id.tvStatus2);
         btnStartRecording = findViewById(R.id.btnStartRecording);
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
         ivImage1 = findViewById(R.id.ivImage1);
         ivImage2 = findViewById(R.id.ivImage2);
+        btnSettings = findViewById(R.id.btnSettings);
         btnPowerOff = findViewById(R.id.btnPowerOff);
-        sbExpComp = findViewById(R.id.sbExpComp);
-        tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
         mainHandler = new Handler(Looper.getMainLooper());
 
@@ -106,6 +100,10 @@ public class MainActivity extends AppCompatActivity {
         btnConnect.setOnClickListener(v -> connectToServer());
         btnDisconnect.setOnClickListener(v -> disconnectFromServer());
         btnPowerOff.setOnClickListener(v -> showPowerOffDialog());
+        btnSettings.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        });
 
         // --- NEW BUTTON LOGIC ---
         btnStartRecording.setOnClickListener(v -> {
@@ -118,9 +116,7 @@ public class MainActivity extends AppCompatActivity {
                 // Get settings from UI
                 String resolution = rb4K.isChecked() ? "4K" : "HD";
                 String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
-                // Get ExpComp value from slider (progress 0-16 -> -2.0 to +2.0)
-                float expCompValue = (sbExpComp.getProgress() - 8) * 0.25f;
-
+                float expCompValue = -100; // Get ExpComp value from slider
                 // Format and send command
                 String command = String.format(Locale.US, CMD_START_RECORDING, resolution, format, expCompValue);
                 sendCommand(command);
@@ -138,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
             String resolution = rb4K.isChecked() ? "4K" : "HD";
             String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
             // Get ExpComp value from slider (progress 0-16 -> -2.0 to +2.0)
-            float expCompValue = (sbExpComp.getProgress() - 8) * 0.25f;
+            float expCompValue = -100;
 
             // Format and send command
             String command = String.format(Locale.US, CMD_CAPTURE_PHOTO, resolution, format, expCompValue);
@@ -147,31 +143,6 @@ public class MainActivity extends AppCompatActivity {
             // Clear the image views for immediate feedback
             ivImage1.setImageDrawable(null);
             ivImage2.setImageDrawable(null);
-        });
-        // --- END NEW BUTTON LOGIC ---
-
-        sbJpegQuality.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                tvJpegQualityLabel.setText("Quality: " + (progress + 1));
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-
-        sbExpComp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // progress is 0-16, maps to -2.0 to +2.0 in 0.25 steps
-                float value = (progress - 8) * 0.25f;
-                tvExpCompLabel.setText(String.format(Locale.US, "Exp Comp: %.2f", value));
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
@@ -284,8 +255,6 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < rgFormat.getChildCount(); i++) {
             rgFormat.getChildAt(i).setEnabled(enabled);
         }
-        sbJpegQuality.setEnabled(enabled);
-        sbExpComp.setEnabled(enabled);
         btnPowerOff.setEnabled(enabled);
     }
 
