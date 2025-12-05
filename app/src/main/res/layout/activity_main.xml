@@ -36,7 +36,7 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Compact Resolution and Format Controls on a single line -->
+        <!-- Compact Resolution, Format, and Power Controls -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -46,9 +46,8 @@
             <!-- Resolution Radio Group -->
             <RadioGroup
                 android:id="@+id/rgResolution"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:orientation="horizontal">
 
                 <RadioButton
@@ -65,12 +64,16 @@
                     android:text="HD" />
             </RadioGroup>
 
+            <!-- Spacer -->
+            <Space
+                android:layout_width="16dp"
+                android:layout_height="wrap_content"/>
+
             <!-- Format Radio Group -->
             <RadioGroup
                 android:id="@+id/rgFormat"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:orientation="horizontal">
 
                 <RadioButton
@@ -86,18 +89,33 @@
                     android:layout_height="wrap_content"
                     android:text="RAW" />
             </RadioGroup>
+
+            <!-- Flexible Spacer to push power button to the right -->
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- Power Button -->
+            <ImageButton
+                android:id="@+id/btnPowerOff"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Power Off Server"
+                android:padding="8dp"
+                android:src="@drawable/ic_power_off" />
         </LinearLayout>
 
 
-        <!-- Compact JPEG Quality SeekBar on a single line -->
+        <!-- Compact JPEG Quality SeekBar -->
         <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
+            android:layout_height="wrap_content">
 
             <TextView
                 android:id="@+id/tvJpegQualityLabel"
-                android:layout_width="wrap_content"
+                android:layout_width="80dp"
                 android:layout_height="wrap_content"
                 android:layout_alignParentStart="true"
                 android:layout_centerVertical="true"
@@ -113,6 +131,33 @@
                 android:max="99"
                 android:progress="89" />
         </RelativeLayout>
+
+        <!-- NEW: Exposure Compensation SeekBar -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/tvExpCompLabel"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:text="Exp Comp: 0.0" />
+
+            <SeekBar
+                android:id="@+id/sbExpComp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:layout_toEndOf="@id/tvExpCompLabel"
+                android:max="16"
+                android:progress="8" />
+
+        </RelativeLayout>
+
 
         <!-- Status Text Lines -->
         <TextView

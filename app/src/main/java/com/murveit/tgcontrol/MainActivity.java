@@ -8,6 +8,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -15,6 +16,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.ByteArrayOutputStream;
@@ -32,15 +34,21 @@ public class MainActivity extends AppCompatActivity {
 
 
     // Use 10.0.2.2 to test with an emulator and running the server on the laptop.
-    private static final String TennisGenius_HOST = "10.0.2.2";
+    private static final String Emulator_HOST = "10.0.2.2";
+    // Use 10.42.0.1 when the phone is on the TG_AP network.
+    private static final String TG_AP_HOST = "10.42.0.1";
+    // Use localhost when debugging with a mock server and client on same machine.
+    private static final String MOCK_HOST = "localhost";
+    private static final String TennisGenius_HOST = TG_AP_HOST;
     private static final int TennisGenius_PORT = 8000;
     private static final int CONNECTION_TIMEOUT_MS = 5000; // 5 seconds
     private static final int SIZE_HEADER_LENGTH = 10;
 
-    // NEW: Commands for server communication
-    private static final String CMD_START_RECORDING = "START_RECORDING:%s,%s\n";
+    // Commands for server communication
+    private static final String CMD_START_RECORDING = "START_RECORDING:%s,%s,ExpComp=%.2f\n";
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
-    private static final String CMD_CAPTURE_PHOTO = "CAPTURE_PHOTO:%s,%s,0.25\n";
+    private static final String CMD_CAPTURE_PHOTO = "CAPTURE_PHOTO:%s,%s,0.25,ExpComp=%.2f\n";
+    private static final String CMD_SHUTDOWN_SYSTEM = "SHUTDOWN_SYSTEM\n";
 
 
     private Handler mainHandler;
@@ -49,13 +57,16 @@ public class MainActivity extends AppCompatActivity {
     private Button btnConnect;
     private Button btnDisconnect;
     private RadioGroup rgResolution, rgFormat;
-    private RadioButton rb4K; // rbHD, rbJPEG, rbRAW are not needed as member variables
+    private RadioButton rb4K;
     private TextView tvJpegQualityLabel;
     private SeekBar sbJpegQuality;
     private TextView tvStatus1, tvStatus2;
     private Button btnStartRecording;
     private Button btnCapturePhotos;
-    private ImageView ivImage1, ivImage2; // NEW: Two ImageViews
+    private ImageView ivImage1, ivImage2;
+    private ImageButton btnPowerOff;
+    private SeekBar sbExpComp;
+    private TextView tvExpCompLabel;
 
 
     private Socket socket;
@@ -83,14 +94,18 @@ public class MainActivity extends AppCompatActivity {
         tvStatus2 = findViewById(R.id.tvStatus2);
         btnStartRecording = findViewById(R.id.btnStartRecording);
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
-        ivImage1 = findViewById(R.id.ivImage1); // NEW
-        ivImage2 = findViewById(R.id.ivImage2); // NEW
+        ivImage1 = findViewById(R.id.ivImage1);
+        ivImage2 = findViewById(R.id.ivImage2);
+        btnPowerOff = findViewById(R.id.btnPowerOff);
+        sbExpComp = findViewById(R.id.sbExpComp);
+        tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
         mainHandler = new Handler(Looper.getMainLooper());
 
         // Set listeners
         btnConnect.setOnClickListener(v -> connectToServer());
         btnDisconnect.setOnClickListener(v -> disconnectFromServer());
+        btnPowerOff.setOnClickListener(v -> showPowerOffDialog());
 
         // --- NEW BUTTON LOGIC ---
         btnStartRecording.setOnClickListener(v -> {
@@ -103,9 +118,11 @@ public class MainActivity extends AppCompatActivity {
                 // Get settings from UI
                 String resolution = rb4K.isChecked() ? "4K" : "HD";
                 String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
+                // Get ExpComp value from slider (progress 0-16 -> -2.0 to +2.0)
+                float expCompValue = (sbExpComp.getProgress() - 8) * 0.25f;
 
                 // Format and send command
-                String command = String.format(Locale.US, CMD_START_RECORDING, resolution, format);
+                String command = String.format(Locale.US, CMD_START_RECORDING, resolution, format, expCompValue);
                 sendCommand(command);
 
             } else {
@@ -120,10 +137,16 @@ public class MainActivity extends AppCompatActivity {
             // Get settings from UI
             String resolution = rb4K.isChecked() ? "4K" : "HD";
             String format = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
+            // Get ExpComp value from slider (progress 0-16 -> -2.0 to +2.0)
+            float expCompValue = (sbExpComp.getProgress() - 8) * 0.25f;
 
             // Format and send command
-            String command = String.format(Locale.US, CMD_CAPTURE_PHOTO, resolution, format);
+            String command = String.format(Locale.US, CMD_CAPTURE_PHOTO, resolution, format, expCompValue);
             sendCommand(command);
+
+            // Clear the image views for immediate feedback
+            ivImage1.setImageDrawable(null);
+            ivImage2.setImageDrawable(null);
         });
         // --- END NEW BUTTON LOGIC ---
 
@@ -138,8 +161,44 @@ public class MainActivity extends AppCompatActivity {
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
+        sbExpComp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                // progress is 0-16, maps to -2.0 to +2.0 in 0.25 steps
+                float value = (progress - 8) * 0.25f;
+                tvExpCompLabel.setText(String.format(Locale.US, "Exp Comp: %.2f", value));
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
         updateControlButtons(false); // Initial state is disconnected
+    }
+
+    private void showPowerOffDialog() {
+        if (socket == null || !socket.isConnected()) {
+            Toast.makeText(this, "Not connected to server.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Power Down Tennis Genius?")
+                .setMessage("Are you sure you want to shut down the server?")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    Log.d(TAG, "User confirmed power off. Sending command.");
+                    sendCommand(CMD_SHUTDOWN_SYSTEM);
+                    // Add a small delay for the command to be sent before disconnecting
+                    mainHandler.postDelayed(this::disconnectFromServer, 500);
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    Log.d(TAG, "User cancelled power off.");
+                    dialog.dismiss();
+                })
+                .setIcon(android.R.drawable.ic_dialog_alert)
+                .show();
     }
 
     private void connectToServer() {
@@ -226,6 +285,8 @@ public class MainActivity extends AppCompatActivity {
             rgFormat.getChildAt(i).setEnabled(enabled);
         }
         sbJpegQuality.setEnabled(enabled);
+        sbExpComp.setEnabled(enabled);
+        btnPowerOff.setEnabled(enabled);
     }
 
     // UPDATED: Now draws the bitmap on the specified ImageView
@@ -396,7 +457,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // --- THE FIX IS HERE ---
     private void receiveImageFrame(final ImageView targetImageView) throws IOException {
         try { socket.setSoTimeout(5000); } catch (Exception e) { /* ignore */ }
 
@@ -408,7 +468,9 @@ public class MainActivity extends AppCompatActivity {
         try {
             imageSize = Integer.parseInt(headerStr);
         } catch (NumberFormatException e) {
-            throw new IOException("Malformed image size header received: '" + headerStr + "'");
+            String errorMsg = "Malformed image size header received: '" + headerStr + "'";
+            Log.e(TAG, errorMsg, e);
+            throw new IOException(errorMsg);
         }
 
         if (imageSize <= 0) {
