@@ -64,12 +64,10 @@
                     android:text="HD" />
             </RadioGroup>
 
-            <!-- Spacer -->
             <Space
                 android:layout_width="16dp"
                 android:layout_height="wrap_content"/>
 
-            <!-- Format Radio Group -->
             <RadioGroup
                 android:id="@+id/rgFormat"
                 android:layout_width="wrap_content"
@@ -90,7 +88,6 @@
                     android:text="RAW" />
             </RadioGroup>
 
-            <!-- Flexible Spacer to push power button to the right -->
             <Space
                 android:layout_width="0dp"
                 android:layout_height="1dp"
@@ -100,24 +97,22 @@
                 android:id="@+id/btnSettings"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="16dp"
+                android:padding="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Settings"
                 android:src="@drawable/outline_control_camera_24"
-                app:layout_constraintEnd_toStartOf="@id/btnPowerOff"
-                app:layout_constraintTop_toTopOf="@id/btnPowerOff"
-                app:layout_constraintBottom_toBottomOf="@id/btnPowerOff" />
+                app:tint="?attr/colorOnSurface" />
 
-            <!-- Power Button -->
             <ImageButton
                 android:id="@+id/btnPowerOff"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="16dp"
+                android:layout_marginStart="16dp"
+                android:padding="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Power Off Server"
                 android:src="@drawable/ic_power_off"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                android:layout_marginTop="16dp" />
+                app:tint="?attr/colorOnSurface" />
         </LinearLayout>
 
         <!-- Status Text Lines -->
