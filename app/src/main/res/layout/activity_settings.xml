@@ -73,16 +73,12 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/tvExposureLabel" />
 
-            <!-- ... PASTE THE REST OF YOUR WIDGETS (Gain, SeekBars, CheckBoxes) HERE ... -->
-            <!-- They remain exactly the same as before -->
-
-            <!-- Gain and Digital Gain -->
             <TextView
                 android:id="@+id/tvGainLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
-                android:text="Gain (%)"
+                android:text="Gain"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/etExposure" />
 
@@ -101,7 +97,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
-                android:text="Digital Gain (%)"
+                android:text="Digital Gain"
                 app:layout_constraintStart_toEndOf="@id/etGain"
                 app:layout_constraintTop_toTopOf="@id/tvGainLabel" />
 
