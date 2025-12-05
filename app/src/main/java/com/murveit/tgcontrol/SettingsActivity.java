@@ -24,7 +24,8 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_CONNECTION_TARGET = "connection_target_pos"; // ADD THIS
     public static final String KEY_AE_LOCK = "ae_lock";
     public static final String KEY_AWB_LOCK = "awb_lock";
-    public static final String KEY_EXPOSURE = "exposure";
+    public static final String KEY_EXPOSURE_LOW = "exposure_low";
+    public static final String KEY_EXPOSURE_HIGH = "exposure_high";
     public static final String KEY_GAIN = "gain";
     public static final String KEY_DIGITAL_GAIN = "digital_gain";
     public static final String KEY_JPEG_QUALITY = "jpeg_quality";
@@ -34,7 +35,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Spinner spnConnectionTarget; // ADD THIS
     private CheckBox cbAeLock;
     private CheckBox cbAwbLock;
-    private EditText etExposure;
+    private EditText etExposureLow;
+    private EditText etExposureHigh;
     private EditText etGain;
     private EditText etDigitalGain;
     private SeekBar sbJpegQuality;
@@ -58,7 +60,8 @@ public class SettingsActivity extends AppCompatActivity {
         spnConnectionTarget = findViewById(R.id.spnConnectionTarget); // ADD THIS
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
-        etExposure = findViewById(R.id.etExposure);
+        etExposureLow = findViewById(R.id.etExposureLow);
+        etExposureHigh = findViewById(R.id.etExposureHigh);
         etGain = findViewById(R.id.etGain);
         etDigitalGain = findViewById(R.id.etDigitalGain);
         sbJpegQuality = findViewById(R.id.sbJpegQuality);
@@ -88,7 +91,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
-        etExposure.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE, 10000L))); // Use long for exposure
+        etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L))); // Use long for exposure
+
+        etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L))); // Use long for exposure
         etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
         etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
 
@@ -114,9 +119,14 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Safely parse numbers from EditTexts, with defaults
         try {
-            editor.putLong(KEY_EXPOSURE, Long.parseLong(etExposure.getText().toString()));
+            editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));
         } catch (NumberFormatException e) {
-            editor.putLong(KEY_EXPOSURE, 10000L); // Default value
+            editor.putLong(KEY_EXPOSURE_LOW, 10000L); // Default value
+        }
+        try {
+            editor.putLong(KEY_EXPOSURE_HIGH, Long.parseLong(etExposureHigh.getText().toString()));
+        } catch (NumberFormatException e) {
+            editor.putLong(KEY_EXPOSURE_HIGH, 10000L); // Default value
         }
         try {
             editor.putFloat(KEY_GAIN, Float.parseFloat(etGain.getText().toString()));

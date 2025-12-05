@@ -136,23 +136,13 @@ public class MainActivity extends AppCompatActivity {
         updateControlButtons(false); // Initial state is disconnected
     }
 
-    // [Client-53760] Received Command: START_RECORDING (Params: 4K,JPEG,exp_comp=0.0,gain=1.0,digital_gain=1.0,exposure=33333,aelock=0,awblock=0)
-    //
-    // command = (
-    //                f"START_RECORDING:{mode},{encoding},"
-    //                f"exp_comp={self.exposure_compensation.get()},"
-    //                f"gain={self.gain.get()},"
-    //                f"digital_gain={self.digital_gain.get()},"
-    //                f"exposure={self.exposure.get()},"
-    //                f"aelock={int(self.ae_lock.get())}," # Convert boolean to 0/1 integer
-    //                f"awblock={int(self.awb_lock.get())}" # Convert boolean to 0/1 integer
-    //            )
     private String buildStartRecordingCommand() {
         // --- Values from SettingsActivity ---
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
         boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
-        long exposure = prefs.getLong(SettingsActivity.KEY_EXPOSURE, 33333L);
+        long exposureLow = prefs.getLong(SettingsActivity.KEY_EXPOSURE_LOW, 33333L);
+        long exposureHigh = prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L);
         float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
         float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
         int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
@@ -173,8 +163,10 @@ public class MainActivity extends AppCompatActivity {
         commandBuilder.append(gain);
         commandBuilder.append(",digital_gain=");
         commandBuilder.append(digitalGain);
-        commandBuilder.append(",exposure=");
-        commandBuilder.append(exposure);
+        commandBuilder.append(",exposureLow=");
+        commandBuilder.append(exposureLow);
+        commandBuilder.append(",exposureHigh=");
+        commandBuilder.append(exposureHigh);
         commandBuilder.append(",aelock=");
         commandBuilder.append(aeLock ? 1 : 0);
         commandBuilder.append(",awblock=");
@@ -205,21 +197,14 @@ public class MainActivity extends AppCompatActivity {
                 return LOCAL_HOST;
         }
     }
-        // [Client-53760] Received Command: CAPTURE_PHOTO (Params: 4K,JPEG,0.25,exp_comp=0.0,gain=1.0,digital_gain=1.0,exposure=33333,aelock=0,awblock=0)
-    //
-    //command = (
-    //            f"CAPTURE_PHOTO:{mode},{encoding},"
-    //            f"{scale_factor},exp_comp={self.exposure_compensation.get()},"
-    //            f"gain={self.gain.get()},digital_gain=self.digital_gain.get()},"
-    //            f"exposure={self.exposure.get()},aelock={int(self.ae_lock.get())},"
-    //            f"awblock={int(self.awb_lock.get())}"
-    //        )
+
     private String buildCaptureCommand() {
         // --- Values from SettingsActivity ---
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
         boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
-        long exposure = prefs.getLong(SettingsActivity.KEY_EXPOSURE, 33333L);
+        long exposureLow = prefs.getLong(SettingsActivity.KEY_EXPOSURE_LOW, 33333L);
+        long exposureHigh = prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L);
         float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
         float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
         int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
@@ -243,8 +228,10 @@ public class MainActivity extends AppCompatActivity {
         commandBuilder.append(gain);
         commandBuilder.append(",digital_gain=");
         commandBuilder.append(digitalGain);
-        commandBuilder.append(",exposure=");
-        commandBuilder.append(exposure);
+        commandBuilder.append(",exposureLow=");
+        commandBuilder.append(exposureLow);
+        commandBuilder.append(",exposureHigh=");
+        commandBuilder.append(exposureHigh);
         commandBuilder.append(",aelock=");
         commandBuilder.append(aeLock ? 1 : 0);
         commandBuilder.append(",awblock=");

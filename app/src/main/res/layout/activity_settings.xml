@@ -54,25 +54,47 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@id/tvTargetLabel"
                 app:layout_constraintTop_toTopOf="parent" />
-            <!-- Exposure -->
+
+            <!-- Exposure Low (Renamed) -->
             <TextView
-                android:id="@+id/tvExposureLabel"
+                android:id="@+id/tvExposureLowLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
-                android:text="Exposure"
+                android:text="Exposure Low"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/spnConnectionTarget" />
 
             <EditText
-                android:id="@+id/etExposure"
+                android:id="@+id/etExposureLow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:ems="9"
                 android:inputType="number"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLabel"
-                app:layout_constraintStart_toEndOf="@id/tvExposureLabel" />
+                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLowLabel"
+                app:layout_constraintStart_toEndOf="@id/tvExposureLowLabel" />
+
+            <!-- Exposure High (New) -->
+            <TextView
+                android:id="@+id/tvExposureHighLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Exposure High"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/etExposureLow" />
+
+            <EditText
+                android:id="@+id/etExposureHigh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:ems="9"
+                android:inputType="number"
+                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureHighLabel"
+                app:layout_constraintStart_toEndOf="@id/tvExposureHighLabel" />
+
 
             <!-- Gain -->
             <TextView
@@ -82,7 +104,7 @@
                 android:layout_marginTop="24dp"
                 android:text="Gain"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/etExposure" />
+                app:layout_constraintTop_toBottomOf="@id/etExposureHigh" />
 
             <EditText
                 android:id="@+id/etGain"
@@ -128,6 +150,7 @@
                 android:id="@+id/sbJpegQuality"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:max="99"
                 android:progress="0"
                 app:layout_constraintBottom_toBottomOf="@id/tvJpegQualityLabel"
@@ -149,6 +172,7 @@
                 android:id="@+id/sbExpComp"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:max="16"
                 android:progress="8"
                 app:layout_constraintBottom_toBottomOf="@id/tvExpCompLabel"
