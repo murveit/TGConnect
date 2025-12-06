@@ -21,7 +21,7 @@ import java.util.Locale;
 public class SettingsActivity extends AppCompatActivity {
 
     // 1. Define keys for SharedPreferences
-    public static final String KEY_CONNECTION_TARGET = "connection_target_pos"; // ADD THIS
+    public static final String KEY_CONNECTION_TARGET = "connection_target_name";
     public static final String KEY_AE_LOCK = "ae_lock";
     public static final String KEY_AWB_LOCK = "awb_lock";
     public static final String KEY_EXPOSURE_LOW = "exposure_low";
@@ -86,9 +86,14 @@ public class SettingsActivity extends AppCompatActivity {
     private void loadSettings() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        // Load Spinner selection (we save the position, an integer)
-        spnConnectionTarget.setSelection(prefs.getInt(KEY_CONNECTION_TARGET, 2)); // Default to TG_AP (position 2)
-
+        String savedTarget = prefs.getString(KEY_CONNECTION_TARGET, "Chico");
+        ArrayAdapter<CharSequence> adapter = (ArrayAdapter<CharSequence>) spnConnectionTarget.getAdapter();
+        if (adapter != null) {
+            // Find the position of the saved string in the adapter
+            int position = adapter.getPosition(savedTarget);
+            // Set the spinner to that position. If not found, it defaults to 0.
+            spnConnectionTarget.setSelection(position >= 0 ? position : 0);
+        }
         cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
         etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L))); // Use long for exposure
@@ -111,9 +116,7 @@ public class SettingsActivity extends AppCompatActivity {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         SharedPreferences.Editor editor = prefs.edit();
 
-        // Save the selected position of the Spinner
-        editor.putInt(KEY_CONNECTION_TARGET, spnConnectionTarget.getSelectedItemPosition());
-
+        editor.putString(KEY_CONNECTION_TARGET, spnConnectionTarget.getSelectedItem().toString());
         editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
         editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
 
