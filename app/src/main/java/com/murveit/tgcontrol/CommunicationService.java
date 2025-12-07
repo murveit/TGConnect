@@ -130,7 +130,12 @@ public class CommunicationService extends Service {
                     try {
                     String serverMessage = readLineFromStream(inputStream);
                     if (serverMessage != null && !serverMessage.isEmpty()) {
-                        if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
+                        if (serverMessage.startsWith("SERVER_STOP:")) {
+                            // Server has forced the recording to stop
+                            String reason = serverMessage.substring("SERVER_STOP:".length()).trim();
+                            Log.w(TAG, "Server forced recording to stop. Reason: " + reason);
+                            statusData.postValue(new Pair<>("SERVER_STOP", "Server stopped: " + reason));
+                        } else if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
                             statusData.postValue(new Pair<>("Status", "Receiving images..."));
                             try {
                                 // Increase timeout for potentially slow image transfer

@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final String CMD_SHUTDOWN_SYSTEM = "SHUTDOWN_SYSTEM\n";
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
-    ////private static final String CMD_GET_PREVIEW_FRAME = "get-preview-frame\n";
+    /// /private static final String CMD_GET_PREVIEW_FRAME = "get-preview-frame\n";
 
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
@@ -64,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
         updateRecordingButtons(false);
         updateControlButtons(false);
     }
+
     private void requestNotificationPermission() {
         // This is only necessary for Android 13 (API 33) and higher.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -73,6 +74,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -86,6 +88,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
     private void initializeUI() {
         tvStatusLine1 = findViewById(R.id.tvStatus1);
         tvStatusLine2 = findViewById(R.id.tvStatus2);
@@ -188,9 +191,11 @@ public class MainActivity extends AppCompatActivity {
                     isRecording = false; // Also reset recording state
                     updateControlButtons(false);
                 }
+            } else if (status.startsWith("SERVER_STOP")) {
+                isRecording = false; // IMPORTANT: Update the local state
+                btnStartRecording.setText("Start Recording"); // Reset the button
+                updateRecordingButtons(false);
             }
-            // For any other message (like "Server:", "Sent:", etc.), we do nothing to the
-            // isConnected flag or the button states, because the connection is still active.
         });
 
         CommunicationService.getImageData().observe(this, imagePair -> {
