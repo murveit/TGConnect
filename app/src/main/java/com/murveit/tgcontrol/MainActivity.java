@@ -175,7 +175,6 @@ public class MainActivity extends AppCompatActivity {
             // First, always update the status text fields
             updateUIStatus(statusPair.first, statusPair.second);
 
-            // --- NEW, MORE ROBUST LOGIC ---
             String status = statusPair.first;
             String message = statusPair.second;
 
@@ -191,10 +190,11 @@ public class MainActivity extends AppCompatActivity {
                     isRecording = false; // Also reset recording state
                     updateControlButtons(false);
                 }
-            } else if (status.startsWith("SERVER_STOP")) {
-                isRecording = false; // IMPORTANT: Update the local state
-                btnStartRecording.setText("Start Recording"); // Reset the button
+            } else if (status != null && status.startsWith("SERVER_STOP")) {
+
+                isRecording = false;
                 updateRecordingButtons(false);
+                sendCommand(CMD_STOP_RECORDING);
             }
         });
 

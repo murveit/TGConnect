@@ -160,6 +160,14 @@ public class CommunicationService extends Service {
                                     int framesWritten = Integer.parseInt(parts[1].trim());
                                     float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
 
+                                    // Hack to prevent us from filling up the disk.
+                                    final int MIN_FREE_DISK_GB = 100;
+                                    if (freeSpaceGb < MIN_FREE_DISK_GB) {
+                                        Log.e(TAG, "Stopped the recording because the free disk space is low");
+                                        statusData.postValue(new Pair<>("SERVER_STOP", "Stopping Server: Disk too full"));
+                                        return;
+                                    }
+
                                     long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
                                     long seconds = (elapsedMillis / 1000) % 60;
                                     long minutes = (elapsedMillis / (1000 * 60)) % 60;
