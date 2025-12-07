@@ -24,9 +24,9 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
-    private static final String CMD_SHUTDOWN_SYSTEM = "shutdown-system\n";
-    private static final String CMD_STOP_RECORDING = "stop-recording\n";
-    private static final String CMD_GET_PREVIEW_FRAME = "get-preview-frame\n";
+    private static final String CMD_SHUTDOWN_SYSTEM = "SHUTDOWN_SYSTEM\n";
+    private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
+    ////private static final String CMD_GET_PREVIEW_FRAME = "get-preview-frame\n";
 
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
@@ -42,6 +42,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isConnected = false;
     private boolean isRecording = false;
 
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
         setupObservers();
 
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
+        updateRecordingButtons(false);
         updateControlButtons(false);
     }
 
@@ -85,23 +87,52 @@ public class MainActivity extends AppCompatActivity {
 
         btnStartRecording.setOnClickListener(v -> {
             if (!isRecording) {
+                isRecording = true;
+                updateRecordingButtons(true);
                 String command = buildStartRecordingCommand();
                 sendCommand(command);
             } else {
+                isRecording = false;
+                updateRecordingButtons(false);
                 sendCommand(CMD_STOP_RECORDING);
             }
-            isRecording = !isRecording;
-            btnStartRecording.setText(isRecording ? "Stop Recording" : "Start Recording");
         });
 
         btnCapturePhotos.setOnClickListener(v -> {
-            sendCommand(CMD_GET_PREVIEW_FRAME);
+            ivImage1.setImageDrawable(null);
+            ivImage2.setImageDrawable(null);
+            sendCommand(buildCaptureCommand());
         });
 
         btnPowerOff.setOnClickListener(v -> showPowerOffDialog());
         btnSettings.setOnClickListener(v -> startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
-        ivImage1.setOnClickListener(v -> sendCommand(CMD_GET_PREVIEW_FRAME));
-        ivImage2.setOnClickListener(v -> sendCommand(CMD_GET_PREVIEW_FRAME));
+        ////ivImage1.setOnClickListener(v -> sendCommand(CMD_GET_PREVIEW_FRAME));
+        ////ivImage2.setOnClickListener(v -> sendCommand(CMD_GET_PREVIEW_FRAME));
+    }
+
+    // New helper to manage recording button state
+    private void updateRecordingButtons(boolean isCurrentlyRecording) {
+        mainHandler.post(() -> {
+            setSettingsEnabled(!isCurrentlyRecording);
+
+            if (isCurrentlyRecording) {
+                btnStartRecording.setText("Stop Recording");
+                btnCapturePhotos.setEnabled(false); // Disable during recording
+            } else {
+                btnStartRecording.setText("Start Recording");
+                btnCapturePhotos.setEnabled(true); // Re-enable when not recording
+            }
+        });
+    }
+
+    private void setSettingsEnabled(boolean enabled) {
+        for (int i = 0; i < rgResolution.getChildCount(); i++) {
+            rgResolution.getChildAt(i).setEnabled(enabled);
+        }
+        for (int i = 0; i < rgFormat.getChildCount(); i++) {
+            rgFormat.getChildAt(i).setEnabled(enabled);
+        }
+        btnPowerOff.setEnabled(enabled);
     }
 
     // In MainActivity.java
@@ -200,25 +231,85 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    private String buildStartRecordingCommand() {
+    private String buildCaptureCommand() {
+        // --- Values from SettingsActivity ---
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String resolution = rb4K.isChecked() ? "4K" : "HD";
-        String format = rbJPEG.isChecked() ? "JPEG" : "RAW";
-        String exposureLow = String.valueOf(prefs.getInt("exposure_low", 10000));
-        String exposureHigh = String.valueOf(prefs.getInt("exposure_high", 10000));
-        String gain = String.valueOf(prefs.getFloat("gain", 1.0f));
-        String digitalGain = String.valueOf(prefs.getFloat("digital_gain", 1.0f));
+        boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
+        boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
+        long exposureLow = prefs.getLong(SettingsActivity.KEY_EXPOSURE_LOW, 33333L);
+        long exposureHigh = prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L);
+        float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
+        float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
+        int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
+        float expCompValue = (expCompProgress - 8) * 0.25f;
 
-        return String.format(Locale.US,
-                "start-recording --resolution %s --format %s --exp_low %s --exp_high %s --gain %s --digital_gain %s --quality %s --exp_comp %s\n",
-                resolution, format,
-                prefs.getString("exposure_low", "10000"),
-                prefs.getString("exposure_high", "10000"),
-                prefs.getString("gain", "1.0"),
-                prefs.getString("digital_gain", "1.0"),
-                prefs.getInt("jpeg_quality", 85),
-                (prefs.getInt("exp_comp", 8) - 8)
-        );
+        // --- Values from MainActivity UI ---
+        String mode = rb4K.isChecked() ? "4K" : "HD";
+        String encoding = ((RadioButton) findViewById(rgFormat.getCheckedRadioButtonId())).getText().toString().toUpperCase();
+        float scaleFactor = 0.25f; // This seems to be a fixed value in your example
+
+        StringBuilder commandBuilder = new StringBuilder();
+        commandBuilder.append("CAPTURE_PHOTO:");
+        commandBuilder.append(mode);
+        commandBuilder.append(",");
+        commandBuilder.append(encoding);
+        commandBuilder.append(",");
+        commandBuilder.append(scaleFactor);
+        commandBuilder.append(",exp_comp=");
+        commandBuilder.append(expCompValue);
+        commandBuilder.append(",gain=");
+        commandBuilder.append(gain);
+        commandBuilder.append(",digital_gain=");
+        commandBuilder.append(digitalGain);
+        commandBuilder.append(",exposureLow=");
+        commandBuilder.append(exposureLow);
+        commandBuilder.append(",exposureHigh=");
+        commandBuilder.append(exposureHigh);
+        commandBuilder.append(",aelock=");
+        commandBuilder.append(aeLock ? 1 : 0);
+        commandBuilder.append(",awblock=");
+        commandBuilder.append(awbLock ? 1 : 0);
+        commandBuilder.append("\n");
+        return commandBuilder.toString();
+    }
+
+    private String buildStartRecordingCommand() {
+        // --- Values from SettingsActivity ---
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean aeLock = prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false);
+        boolean awbLock = prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false);
+        long exposureLow = prefs.getLong(SettingsActivity.KEY_EXPOSURE_LOW, 33333L);
+        long exposureHigh = prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L);
+        float gain = prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f);
+        float digitalGain = prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f);
+        int expCompProgress = prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8);
+        float expCompValue = (expCompProgress - 8) * 0.25f;
+
+        // --- Values from MainActivity UI ---
+        String mode = rb4K.isChecked() ? "4K" : "HD";
+        String encoding = rbJPEG.isChecked() ? "JPEG" : "RAW";
+
+        StringBuilder commandBuilder = new StringBuilder();
+        commandBuilder.append("START_RECORDING:");
+        commandBuilder.append(mode);
+        commandBuilder.append(",");
+        commandBuilder.append(encoding);
+        commandBuilder.append(",exp_comp=");
+        commandBuilder.append(expCompValue);
+        commandBuilder.append(",gain=");
+        commandBuilder.append(gain);
+        commandBuilder.append(",digital_gain=");
+        commandBuilder.append(digitalGain);
+        commandBuilder.append(",exposureLow=");
+        commandBuilder.append(exposureLow);
+        commandBuilder.append(",exposureHigh=");
+        commandBuilder.append(exposureHigh);
+        commandBuilder.append(",aelock=");
+        commandBuilder.append(aeLock ? 1 : 0);
+        commandBuilder.append(",awblock=");
+        commandBuilder.append(awbLock ? 1 : 0);
+        commandBuilder.append("\n");
+        return commandBuilder.toString();
     }
 
     public void updateUIStatus(String line1, String line2) {

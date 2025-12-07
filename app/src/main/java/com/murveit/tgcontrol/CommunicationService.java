@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CommunicationService extends Service {
@@ -34,6 +35,8 @@ public class CommunicationService extends Service {
     public static final String EXTRA_COMMAND = "com.murveit.tgcontrol.extra.COMMAND";
     public static final String EXTRA_SERVER_ADDRESS = "com.murveit.tgcontrol.extra.SERVER_ADDRESS";
     public static final String NOTIFICATION_CHANNEL_ID = "CommunicationChannel";
+    private static final int SIZE_HEADER_LENGTH = 10;
+    private long recordingStartTime = 0;
 
     // --- LiveData for UI communication ---
     private static final MutableLiveData<Pair<String, String>> statusData = new MutableLiveData<>();
@@ -103,13 +106,70 @@ public class CommunicationService extends Service {
                 socket = new Socket(serverAddress, 8000);
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
+                socket.setSoTimeout(500);
                 statusData.postValue(new Pair<>("Connected", "Ready for command."));
 
                 while (isRunning.get() && socket != null && !socket.isClosed()) {
+                    try {
                     String serverMessage = readLineFromStream(inputStream);
                     if (serverMessage != null && !serverMessage.isEmpty()) {
-                        handleServerMessage(serverMessage);
+                        if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
+                            statusData.postValue(new Pair<>("Status", "Receiving images..."));
+                            try {
+                                // Increase timeout for potentially slow image transfer
+                                socket.setSoTimeout(5000);
+                                receiveImageFrame("image1"); // Receive first image
+                                receiveImageFrame("image2"); // Receive second image
+                            } catch (IOException e) {
+                                Log.e(TAG, "Error during multi-image reception.", e);
+                                statusData.postValue(new Pair<>("Error", "Image transfer failed."));
+                                break; // Exit loop on critical error
+                            } finally {
+                                // IMPORTANT: Reset the timeout back to normal
+                                socket.setSoTimeout(500);
+                            }
+                            statusData.postValue(new Pair<>("Status", "Image transfer complete."));
+                        } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
+                            String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
+                            String[] parts = data.split(",");
+                            if (parts.length == 3) {
+                                try {
+                                    int framesProcessed = Integer.parseInt(parts[0].trim());
+                                    int framesWritten = Integer.parseInt(parts[1].trim());
+                                    float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
+
+                                    long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
+                                    long seconds = (elapsedMillis / 1000) % 60;
+                                    long minutes = (elapsedMillis / (1000 * 60)) % 60;
+                                    String elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
+
+                                    String framesStatus = String.format(Locale.US, "Frames: %5d %5d | Time %s | Free Disk %.1f Gb",
+                                            framesProcessed, framesWritten, elapsedTime, freeSpaceGb);
+                                    statusData.postValue(new Pair<>(null, framesStatus));
+
+                                } catch (NumberFormatException e) {
+                                    Log.e(TAG, "Failed to parse STATUS_FRAMES data: " + data, e);
+                                    statusData.postValue(new Pair<>(null, "Error parsing frame data"));
+                                }
+                            }
+                        } else if (serverMessage.startsWith("STATUS:")) {
+                            String status = serverMessage.substring("STATUS:".length()).trim();
+                            statusData.postValue(new Pair<>(null, status));
+                        } else {
+                            // For all other text messages, just post them to the UI
+                            Log.d(TAG, "Service received: " + serverMessage);
+                            String[] parts = serverMessage.split(":", 2);
+                            String status = parts.length > 1 ? parts[0] : "Server";
+                            String message = parts.length > 1 ? parts[1].trim() : serverMessage;
+                            statusData.postValue(new Pair<>(status, message));
+                        }
                     }
+                } catch (java.net.SocketTimeoutException e) {
+                    // --- THIS IS THE MISSING PIECE ---
+                    // This is normal and expected. It allows the loop to check the isRunning flag.
+                    // We simply 'continue' to the next iteration of the while loop.
+                    continue;
+                }
                 }
             } catch (Exception e) {
                 if (isRunning.get()) {
@@ -136,6 +196,9 @@ public class CommunicationService extends Service {
     }
 
     private void sendCommand(String command) {
+        if (command.startsWith("START_RECORDING")) {
+            recordingStartTime = System.currentTimeMillis();
+        }
         if (outputStream == null || socket == null || !socket.isConnected()) {
             Log.e(TAG, "Cannot send command, not connected.");
             return;
