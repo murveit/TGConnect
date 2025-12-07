@@ -1,8 +1,11 @@
 package com.murveit.tgcontrol;
 
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,6 +22,8 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import java.util.Locale;
 
@@ -41,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     private ImageView ivImage1, ivImage2;
     private boolean isConnected = false;
     private boolean isRecording = false;
+    private static final int REQUEST_CODE_POST_NOTIFICATIONS = 101;
 
 
     @Override
@@ -48,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        requestNotificationPermission();
         mainHandler = new Handler(Looper.getMainLooper());
         initializeUI();
         setupListeners();
@@ -57,7 +64,28 @@ public class MainActivity extends AppCompatActivity {
         updateRecordingButtons(false);
         updateControlButtons(false);
     }
-
+    private void requestNotificationPermission() {
+        // This is only necessary for Android 13 (API 33) and higher.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                // If permission is not granted, request it.
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_CODE_POST_NOTIFICATIONS);
+            }
+        }
+    }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_CODE_POST_NOTIFICATIONS) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted. You could add logic here if needed.
+                Log.d(TAG, "POST_NOTIFICATIONS permission granted.");
+            } else {
+                // Permission denied. Inform the user that notifications are required.
+                Toast.makeText(this, "Notification permission is required for the connection status.", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
     private void initializeUI() {
         tvStatusLine1 = findViewById(R.id.tvStatus1);
         tvStatusLine2 = findViewById(R.id.tvStatus2);
@@ -359,8 +387,7 @@ public class MainActivity extends AppCompatActivity {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         // The key for the spinner setting must match what's used in SettingsActivity
         // Let's use "connection_target" as established in our previous code.
-        String networkName = prefs.getString("connection_target", "Chico"); // Default to "Chico"
-
+        String networkName = prefs.getString(SettingsActivity.KEY_CONNECTION_TARGET, "TG_AP");
         switch (networkName) {
             case "Localhost":
                 return LOCAL_HOST;

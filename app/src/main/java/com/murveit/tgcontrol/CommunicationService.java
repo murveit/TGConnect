@@ -3,6 +3,7 @@ package com.murveit.tgcontrol;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -29,12 +30,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CommunicationService extends Service {
     private static final String TAG = "CommunicationService";
+    private static final String NOTIFICATION_CHANNEL_ID = "TGControlChannel";
+    private static final int NOTIFICATION_ID = 1;
     public static final String ACTION_CONNECT = "com.murveit.tgcontrol.action.CONNECT";
     public static final String ACTION_DISCONNECT = "com.murveit.tgcontrol.action.DISCONNECT";
     public static final String ACTION_SEND_COMMAND = "com.murveit.tgcontrol.action.SEND_COMMAND";
     public static final String EXTRA_COMMAND = "com.murveit.tgcontrol.extra.COMMAND";
     public static final String EXTRA_SERVER_ADDRESS = "com.murveit.tgcontrol.extra.SERVER_ADDRESS";
-    public static final String NOTIFICATION_CHANNEL_ID = "CommunicationChannel";
     private static final int SIZE_HEADER_LENGTH = 10;
     private long recordingStartTime = 0;
 
@@ -69,6 +71,7 @@ public class CommunicationService extends Service {
             final String action = intent.getAction();
             if (ACTION_CONNECT.equals(action)) {
                 String serverAddress = intent.getStringExtra(EXTRA_SERVER_ADDRESS);
+                Log.d(TAG, "Connecting to: " + serverAddress);
                 connect(serverAddress);
             } else if (ACTION_DISCONNECT.equals(action)) {
                 disconnect();
@@ -78,7 +81,7 @@ public class CommunicationService extends Service {
                 sendCommand(command);
             }
         }
-        return START_NOT_STICKY;
+        return START_STICKY; // start_not_sticky
     }
 
     private void connect(String serverAddress) {
@@ -86,12 +89,23 @@ public class CommunicationService extends Service {
             Log.w(TAG, "Connection attempt while already running.");
             return;
         }
+        isRunning.set(true);
+
+        createNotificationChannel();
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flags);
+
 
         Notification notification = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("TGControl")
-                .setContentText("Connecting to server...")
-                .setSmallIcon(R.drawable.ic_launcher_foreground) // Use your app's icon
+                .setContentText("Connected to TG Server")
+                .setSmallIcon(R.drawable.ic_stat_notification)
+                .setContentIntent(pendingIntent)
                 .build();
+        if (notification == null) {
+            return; // Can't continue if notification failed
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
@@ -99,11 +113,14 @@ public class CommunicationService extends Service {
             startForeground(1, notification);
         }
 
-        isRunning.set(true);
         communicationThread = new Thread(() -> {
             try {
                 Log.d(TAG, "Connecting to " + serverAddress + " on port 8000...");
-                socket = new Socket(serverAddress, 8000);
+                statusData.postValue(new Pair<>("Status", "Connecting..."));
+                socket = new Socket();
+                socket.connect(new java.net.InetSocketAddress(serverAddress, 8000), 5000);
+                Log.d(TAG, "Connection successful.");
+
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
                 socket.setSoTimeout(500);
@@ -260,7 +277,7 @@ public class CommunicationService extends Service {
 
     private void receiveImageFrame(String imageTarget) {
         try {
-            byte[] headerBytes = readFullData(inputStream, 10);
+            byte[] headerBytes = readFullData(inputStream, SIZE_HEADER_LENGTH);
             String headerStr = new String(headerBytes, StandardCharsets.UTF_8).trim();
             int imageSize = Integer.parseInt(headerStr);
 
@@ -279,10 +296,15 @@ public class CommunicationService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
                     NOTIFICATION_CHANNEL_ID,
-                    "TGControl Communication Channel",
+                    "TGControl Connection",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
-            getSystemService(NotificationManager.class).createNotificationChannel(serviceChannel);
+            serviceChannel.setDescription("Shows when connected to the Tennis Genius server.");
+
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(serviceChannel);
+            }
         }
     }
 
