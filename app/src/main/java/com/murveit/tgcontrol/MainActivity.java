@@ -26,6 +26,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.util.Locale;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
@@ -183,6 +186,10 @@ public class MainActivity extends AppCompatActivity {
                 if (!isConnected) { // Only update if state changes
                     isConnected = true;
                     updateControlButtons(true);
+                    // Now that we are connected, send the command to set the time.
+                    mainHandler.postDelayed(() -> {
+                        sendCommand(buildSetTimeCommand());
+                    }, 500); // A small delay to ensure the connection is fully stable.
                 }
             } else if ("Error".equals(status) || (message != null && message.startsWith("Disconnected"))) {
                 if (isConnected) { // Only update if state changes
@@ -341,6 +348,18 @@ public class MainActivity extends AppCompatActivity {
         commandBuilder.append(aeLock ? 1 : 0);
         commandBuilder.append(",awblock=");
         commandBuilder.append(awbLock ? 1 : 0);
+        commandBuilder.append("\n");
+        return commandBuilder.toString();
+    }
+
+    private String buildSetTimeCommand() {
+        Date now = new Date();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+        String formattedTime = dateFormat.format(now);
+
+     StringBuilder commandBuilder = new StringBuilder();
+        commandBuilder.append("SET_TIME:");
+        commandBuilder.append(formattedTime); // Append the formatted time string
         commandBuilder.append("\n");
         return commandBuilder.toString();
     }
