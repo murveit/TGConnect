@@ -28,7 +28,6 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_EXPOSURE_HIGH = "exposure_high";
     public static final String KEY_GAIN = "gain";
     public static final String KEY_DIGITAL_GAIN = "digital_gain";
-    public static final String KEY_JPEG_QUALITY = "jpeg_quality";
     public static final String KEY_EXP_COMP_PROGRESS = "exp_comp_progress";
 
     // 2. Declare all the widgets
@@ -39,8 +38,6 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText etExposureHigh;
     private EditText etGain;
     private EditText etDigitalGain;
-    private SeekBar sbJpegQuality;
-    private TextView tvJpegQualityLabel;
     private SeekBar sbExpComp;
     private TextView tvExpCompLabel;
 
@@ -70,8 +67,6 @@ public class SettingsActivity extends AppCompatActivity {
 
         etGain = findViewById(R.id.etGain);
         etDigitalGain = findViewById(R.id.etDigitalGain);
-        sbJpegQuality = findViewById(R.id.sbJpegQuality);
-        tvJpegQualityLabel = findViewById(R.id.tvJpegQualityLabel);
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
@@ -143,10 +138,6 @@ public class SettingsActivity extends AppCompatActivity {
         etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
         etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
 
-        int jpegQuality = prefs.getInt(KEY_JPEG_QUALITY, 85);
-        sbJpegQuality.setProgress(jpegQuality - 1);
-        tvJpegQualityLabel.setText(String.format(Locale.US, "Quality: %d", jpegQuality));
-
         int expCompProgress = prefs.getInt(KEY_EXP_COMP_PROGRESS, 8);
         sbExpComp.setProgress(expCompProgress);
         float expCompValue = (expCompProgress - 8) * 0.25f;
@@ -183,7 +174,6 @@ public class SettingsActivity extends AppCompatActivity {
             editor.putFloat(KEY_DIGITAL_GAIN, 1.0f); // Default value
         }
 
-        editor.putInt(KEY_JPEG_QUALITY, sbJpegQuality.getProgress() + 1);
         editor.putInt(KEY_EXP_COMP_PROGRESS, sbExpComp.getProgress());
 
         editor.apply(); // Save asynchronously
@@ -191,25 +181,6 @@ public class SettingsActivity extends AppCompatActivity {
 
 
     private void setupSeekBarListeners() {
-        sbJpegQuality.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // The progress is 0-99, but we want to display 1-100
-                int quality = progress + 1;
-                tvJpegQualityLabel.setText(String.format(Locale.US, "Quality: %d", quality));
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-                // Not needed for this app
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                // Not needed for this app
-            }
-        });
-
         sbExpComp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {

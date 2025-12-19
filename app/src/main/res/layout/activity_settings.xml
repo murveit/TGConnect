@@ -69,7 +69,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:ems="9"
+                android:ems="5"
                 android:inputType="number"
                 app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLowLabel"
                 app:layout_constraintStart_toEndOf="@id/tvExposureLowLabel" />
@@ -98,11 +98,11 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:ems="9"
+                android:ems="5"
                 android:inputType="number"
                 app:layout_constraintBaseline_toBaselineOf="@id/tvExposureHighLabel"
                 app:layout_constraintStart_toEndOf="@id/tvExposureHighLabel" />
-
+            
             <TextView
                 android:id="@+id/tvExposureHighSeconds"
                 android:layout_width="wrap_content"
@@ -152,37 +152,14 @@
                 app:layout_constraintBaseline_toBaselineOf="@id/tvDigitalGainLabel"
                 app:layout_constraintStart_toEndOf="@id/tvDigitalGainLabel" />
 
-            <!-- JPEG Quality Slider -->
-            <TextView
-                android:id="@+id/tvJpegQualityLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Quality: 1"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/etGain" />
-
-            <SeekBar
-                android:id="@+id/sbJpegQuality"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:max="99"
-                android:progress="0"
-                app:layout_constraintBottom_toBottomOf="@id/tvJpegQualityLabel"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toEndOf="@id/tvJpegQualityLabel"
-                app:layout_constraintTop_toTopOf="@id/tvJpegQualityLabel" />
-
-            <!-- Exposure Compensation Slider -->
             <TextView
                 android:id="@+id/tvExpCompLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="24dp"
                 android:text="Exp Comp: +0.00"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvJpegQualityLabel" />
+                app:layout_constraintTop_toBottomOf="@id/etGain" />
 
             <SeekBar
                 android:id="@+id/sbExpComp"
