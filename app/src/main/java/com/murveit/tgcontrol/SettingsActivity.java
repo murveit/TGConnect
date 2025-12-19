@@ -61,7 +61,13 @@ public class SettingsActivity extends AppCompatActivity {
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
         etExposureLow = findViewById(R.id.etExposureLow);
+        TextView tvExposureLowSeconds = findViewById(R.id.tvExposureLowSeconds);
+        setupNanoToSecondsWatcher(etExposureLow, tvExposureLowSeconds);
+
         etExposureHigh = findViewById(R.id.etExposureHigh);
+        TextView tvExposureHighSeconds = findViewById(R.id.tvExposureHighSeconds);
+        setupNanoToSecondsWatcher(etExposureHigh, tvExposureHighSeconds);
+
         etGain = findViewById(R.id.etGain);
         etDigitalGain = findViewById(R.id.etDigitalGain);
         sbJpegQuality = findViewById(R.id.sbJpegQuality);
@@ -83,6 +89,41 @@ public class SettingsActivity extends AppCompatActivity {
         setupSeekBarListeners();
     }
 
+    private void setupNanoToSecondsWatcher(EditText editText, TextView outputTextView) {
+        editText.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                if (s == null || s.length() == 0) {
+                    outputTextView.setText("0.000 sec");
+                    return;
+                }
+
+                try {
+                    // Parse nanoseconds (long)
+                    long nanoseconds = Long.parseLong(s.toString());
+
+                    // Convert to seconds (double)
+                    double seconds = nanoseconds / 1_000_000_000.0;
+
+                    if (seconds > 0 && seconds < 0.001) {
+                        // For very small non-zero values, show more precision
+                        outputTextView.setText(String.format(java.util.Locale.US, "%.6f sec", seconds));
+                    } else {
+                        // Standard precision
+                        outputTextView.setText(String.format(java.util.Locale.US, "%.3f sec", seconds));
+                    }
+                } catch (NumberFormatException e) {
+                    outputTextView.setText("- sec");
+                }
+            }
+        });
+    }
     private void loadSettings() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 

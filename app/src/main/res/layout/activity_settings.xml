@@ -55,7 +55,6 @@
                 app:layout_constraintStart_toEndOf="@id/tvTargetLabel"
                 app:layout_constraintTop_toTopOf="parent" />
 
-            <!-- Exposure Low (Renamed) -->
             <TextView
                 android:id="@+id/tvExposureLowLabel"
                 android:layout_width="wrap_content"
@@ -75,7 +74,16 @@
                 app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLowLabel"
                 app:layout_constraintStart_toEndOf="@id/tvExposureLowLabel" />
 
-            <!-- Exposure High (New) -->
+            <TextView
+                android:id="@+id/tvExposureLowSeconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="0.000 sec"
+                android:textColor="?android:attr/textColorSecondary"
+                app:layout_constraintBaseline_toBaselineOf="@id/etExposureLow"
+                app:layout_constraintStart_toEndOf="@id/etExposureLow" />
+
             <TextView
                 android:id="@+id/tvExposureHighLabel"
                 android:layout_width="wrap_content"
@@ -95,6 +103,15 @@
                 app:layout_constraintBaseline_toBaselineOf="@id/tvExposureHighLabel"
                 app:layout_constraintStart_toEndOf="@id/tvExposureHighLabel" />
 
+            <TextView
+                android:id="@+id/tvExposureHighSeconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="0.000 sec"
+                android:textColor="?android:attr/textColorSecondary"
+                app:layout_constraintBaseline_toBaselineOf="@id/etExposureHigh"
+                app:layout_constraintStart_toEndOf="@id/etExposureHigh" />
 
             <!-- Gain -->
             <TextView
@@ -116,7 +133,6 @@
                 app:layout_constraintBaseline_toBaselineOf="@id/tvGainLabel"
                 app:layout_constraintStart_toEndOf="@id/tvGainLabel" />
 
-            <!-- Digital Gain -->
             <TextView
                 android:id="@+id/tvDigitalGainLabel"
                 android:layout_width="wrap_content"
@@ -180,7 +196,6 @@
                 app:layout_constraintStart_toEndOf="@id/tvExpCompLabel"
                 app:layout_constraintTop_toTopOf="@id/tvExpCompLabel" />
 
-            <!-- AE and AWB Locks -->
             <CheckBox
                 android:id="@+id/cbAeLock"
                 android:layout_width="wrap_content"
