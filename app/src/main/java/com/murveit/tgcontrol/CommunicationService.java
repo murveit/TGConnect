@@ -5,12 +5,15 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 import android.util.Pair;
 
@@ -48,6 +51,8 @@ public class CommunicationService extends Service {
     private OutputStream outputStream;
     private InputStream inputStream;
     private Thread communicationThread;
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     // --- Public accessors for MainActivity to observe LiveData ---
@@ -63,6 +68,24 @@ public class CommunicationService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+
+        // 1. Initialize PowerManager WakeLock (CPU stays on)
+        // Corrected the Context reference here
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TGControl:RecordingWakeLock");
+        }
+
+        // 2. Initialize WifiManager WifiLock (Wifi stays high-perf)
+        WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifiManager != null) {
+            // Use WIFI_MODE_FULL_LOW_LATENCY for API 29+, WIFI_MODE_FULL_HIGH_PERF for older
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "TGControl:WifiLock");
+            } else {
+                wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "TGControl:WifiLock");
+            }
+        }
     }
 
     @Override
@@ -228,6 +251,11 @@ public class CommunicationService extends Service {
     private void sendCommand(String command) {
         if (command.startsWith("START_RECORDING")) {
             recordingStartTime = System.currentTimeMillis();
+            startRecordingLocks();
+        }
+        // Trigger release if we explicitly send a stop command
+        if (command.startsWith("STOP_RECORDING")) {
+            stopRecordingLocks();
         }
         if (outputStream == null || socket == null || !socket.isConnected()) {
             Log.e(TAG, "Cannot send command, not connected.");
@@ -246,6 +274,8 @@ public class CommunicationService extends Service {
     private void disconnect() {
         Log.d(TAG, "Disconnecting...");
         isRunning.set(false);
+        // Crucial: Release locks when the connection drops or is closed
+        stopRecordingLocks();
         try {
             if (socket != null) {
                 socket.close();
@@ -327,8 +357,28 @@ public class CommunicationService extends Service {
         return null;
     }
 
+    // Call this when you start your socket recording
+    private void startRecordingLocks() {
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire(); // Keeps CPU awake
+        }
+        if (wifiLock != null && !wifiLock.isHeld()) {
+            wifiLock.acquire(); // Keeps Wifi radio active
+        }
+    }
+
+    // Call this when you stop recording or the socket closes
+    private void stopRecordingLocks() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+        if (wifiLock != null && wifiLock.isHeld()) {
+            wifiLock.release();
+        }
+    }
     @Override
     public void onDestroy() {
+        stopRecordingLocks(); // Safety check
         super.onDestroy();
         disconnect();
     }
