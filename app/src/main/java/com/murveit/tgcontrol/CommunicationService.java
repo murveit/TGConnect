@@ -10,6 +10,10 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.ConnectivityManager;
+import android.net.NetworkRequest;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -17,6 +21,7 @@ import android.os.PowerManager;
 import android.util.Log;
 import android.util.Pair;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.lifecycle.LiveData;
@@ -53,6 +58,8 @@ public class CommunicationService extends Service {
     private Thread communicationThread;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     // --- Public accessors for MainActivity to observe LiveData ---
@@ -85,6 +92,8 @@ public class CommunicationService extends Service {
             } else {
                 wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "TGControl:WifiLock");
             }
+            // Optional: some devices need this to ensure the lock isn't optimized away
+            wifiLock.setReferenceCounted(false);
         }
     }
 
@@ -113,37 +122,81 @@ public class CommunicationService extends Service {
             return;
         }
         isRunning.set(true);
+        startRecordingLocks();
 
+        // 1. Show Foreground Notification
         createNotificationChannel();
         Intent notificationIntent = new Intent(this, MainActivity.class);
         int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flags);
 
-
         Notification notification = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("TGControl")
-                .setContentText("Connected to TG Server")
+                .setContentText("Connecting to WiFi...")
                 .setSmallIcon(R.drawable.ic_stat_notification)
                 .setContentIntent(pendingIntent)
                 .build();
-        if (notification == null) {
-            return; // Can't continue if notification failed
-        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
-            // For older Android versions, the old method is still used.
             startForeground(1, notification);
         }
 
+        // 2. Request WiFi specifically and bind to it
+        requestWifiNetwork(serverAddress);
+    }
+
+    private void requestWifiNetwork(String serverAddress) {
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        // Build a request for WiFi transport only
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build();
+
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(@NonNull Network network) {
+                super.onAvailable(network);
+                Log.d(TAG, "WiFi Network Available. Binding process to WiFi...");
+
+                // FORCE the app to use this WiFi network, ignoring cellular data
+                connectivityManager.bindProcessToNetwork(network);
+
+                // Now that we are bound, start the actual communication thread
+                // FIX: Wait a quarter-second for the OS routing to settle.
+                // This prevents the "first-time drop" bug.
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    if (isRunning.get()) {
+                        startCommunicationThread(serverAddress);
+                    }
+                }, 250);
+            }
+
+            @Override
+            public void onLost(@NonNull Network network) {
+                super.onLost(network);
+                Log.d(TAG, "WiFi Network Lost. Unbinding...");
+                connectivityManager.bindProcessToNetwork(null);
+                disconnect();
+            }
+        };
+
+        connectivityManager.requestNetwork(request, networkCallback);
+    }
+
+    private void startCommunicationThread(String serverAddress) {
         communicationThread = new Thread(() -> {
             try {
                 Log.d(TAG, "Connecting to " + serverAddress + " on port 8000...");
                 statusData.postValue(new Pair<>("Status", "Connecting..."));
-                socket = new Socket();
-                socket.connect(new java.net.InetSocketAddress(serverAddress, 8000), 5000);
-                Log.d(TAG, "Connection successful.");
 
+                socket = new Socket();
+                // Because of bindProcessToNetwork, this will use WiFi even without internet
+                socket.connect(new java.net.InetSocketAddress(serverAddress, 8000), 5000);
+
+                Log.d(TAG, "Connection successful.");
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
                 socket.setSoTimeout(500);
@@ -151,78 +204,78 @@ public class CommunicationService extends Service {
 
                 while (isRunning.get() && socket != null && !socket.isClosed()) {
                     try {
-                    String serverMessage = readLineFromStream(inputStream);
-                    if (serverMessage != null && !serverMessage.isEmpty()) {
-                        if (serverMessage.startsWith("SERVER_STOP:")) {
-                            // Server has forced the recording to stop
-                            String reason = serverMessage.substring("SERVER_STOP:".length()).trim();
-                            Log.w(TAG, "Server forced recording to stop. Reason: " + reason);
-                            statusData.postValue(new Pair<>("SERVER_STOP", "Server stopped: " + reason));
-                        } else if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
-                            statusData.postValue(new Pair<>("Status", "Receiving images..."));
-                            try {
-                                // Increase timeout for potentially slow image transfer
-                                socket.setSoTimeout(5000);
-                                receiveImageFrame("image1"); // Receive first image
-                                receiveImageFrame("image2"); // Receive second image
-                            } catch (IOException e) {
-                                Log.e(TAG, "Error during multi-image reception.", e);
-                                statusData.postValue(new Pair<>("Error", "Image transfer failed."));
-                                break; // Exit loop on critical error
-                            } finally {
-                                // IMPORTANT: Reset the timeout back to normal
-                                socket.setSoTimeout(500);
-                            }
-                            statusData.postValue(new Pair<>("Status", "Image transfer complete."));
-                        } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
-                            String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
-                            String[] parts = data.split(",");
-                            if (parts.length == 3) {
+                        String serverMessage = readLineFromStream(inputStream);
+                        if (serverMessage != null && !serverMessage.isEmpty()) {
+                            if (serverMessage.startsWith("SERVER_STOP:")) {
+                                // Server has forced the recording to stop
+                                String reason = serverMessage.substring("SERVER_STOP:".length()).trim();
+                                Log.w(TAG, "Server forced recording to stop. Reason: " + reason);
+                                statusData.postValue(new Pair<>("SERVER_STOP", "Server stopped: " + reason));
+                            } else if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
+                                statusData.postValue(new Pair<>("Status", "Receiving images..."));
                                 try {
-                                    int framesProcessed = Integer.parseInt(parts[0].trim());
-                                    int framesWritten = Integer.parseInt(parts[1].trim());
-                                    float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
-
-                                    // Hack to prevent us from filling up the disk.
-                                    final int MIN_FREE_DISK_GB = 100;
-                                    if (freeSpaceGb < MIN_FREE_DISK_GB) {
-                                        Log.e(TAG, "Stopped the recording because the free disk space is low");
-                                        statusData.postValue(new Pair<>("SERVER_STOP", "Stopping Server: Disk too full"));
-                                        return;
-                                    }
-
-                                    long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
-                                    long seconds = (elapsedMillis / 1000) % 60;
-                                    long minutes = (elapsedMillis / (1000 * 60)) % 60;
-                                    String elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
-
-                                    String framesStatus = String.format(Locale.US, "Frames: %5d %5d | Time %s | Free Disk %.1f Gb",
-                                            framesProcessed, framesWritten, elapsedTime, freeSpaceGb);
-                                    statusData.postValue(new Pair<>(null, framesStatus));
-
-                                } catch (NumberFormatException e) {
-                                    Log.e(TAG, "Failed to parse STATUS_FRAMES data: " + data, e);
-                                    statusData.postValue(new Pair<>(null, "Error parsing frame data"));
+                                    // Increase timeout for potentially slow image transfer
+                                    socket.setSoTimeout(5000);
+                                    receiveImageFrame("image1"); // Receive first image
+                                    receiveImageFrame("image2"); // Receive second image
+                                } catch (IOException e) {
+                                    Log.e(TAG, "Error during multi-image reception.", e);
+                                    statusData.postValue(new Pair<>("Error", "Image transfer failed."));
+                                    break; // Exit loop on critical error
+                                } finally {
+                                    // IMPORTANT: Reset the timeout back to normal
+                                    socket.setSoTimeout(500);
                                 }
+                                statusData.postValue(new Pair<>("Status", "Image transfer complete."));
+                            } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
+                                String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
+                                String[] parts = data.split(",");
+                                if (parts.length == 3) {
+                                    try {
+                                        int framesProcessed = Integer.parseInt(parts[0].trim());
+                                        int framesWritten = Integer.parseInt(parts[1].trim());
+                                        float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
+
+                                        // Hack to prevent us from filling up the disk.
+                                        final int MIN_FREE_DISK_GB = 100;
+                                        if (freeSpaceGb < MIN_FREE_DISK_GB) {
+                                            Log.e(TAG, "Stopped the recording because the free disk space is low");
+                                            statusData.postValue(new Pair<>("SERVER_STOP", "Stopping Server: Disk too full"));
+                                            return;
+                                        }
+
+                                        long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
+                                        long seconds = (elapsedMillis / 1000) % 60;
+                                        long minutes = (elapsedMillis / (1000 * 60)) % 60;
+                                        String elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
+
+                                        String framesStatus = String.format(Locale.US, "Frames: %5d %5d | Time %s | Free Disk %.1f Gb",
+                                                framesProcessed, framesWritten, elapsedTime, freeSpaceGb);
+                                        statusData.postValue(new Pair<>(null, framesStatus));
+
+                                    } catch (NumberFormatException e) {
+                                        Log.e(TAG, "Failed to parse STATUS_FRAMES data: " + data, e);
+                                        statusData.postValue(new Pair<>(null, "Error parsing frame data"));
+                                    }
+                                }
+                            } else if (serverMessage.startsWith("STATUS:")) {
+                                String status = serverMessage.substring("STATUS:".length()).trim();
+                                statusData.postValue(new Pair<>(null, status));
+                            } else {
+                                // For all other text messages, just post them to the UI
+                                Log.d(TAG, "Service received: " + serverMessage);
+                                String[] parts = serverMessage.split(":", 2);
+                                String status = parts.length > 1 ? parts[0] : "Server";
+                                String message = parts.length > 1 ? parts[1].trim() : serverMessage;
+                                statusData.postValue(new Pair<>(status, message));
                             }
-                        } else if (serverMessage.startsWith("STATUS:")) {
-                            String status = serverMessage.substring("STATUS:".length()).trim();
-                            statusData.postValue(new Pair<>(null, status));
-                        } else {
-                            // For all other text messages, just post them to the UI
-                            Log.d(TAG, "Service received: " + serverMessage);
-                            String[] parts = serverMessage.split(":", 2);
-                            String status = parts.length > 1 ? parts[0] : "Server";
-                            String message = parts.length > 1 ? parts[1].trim() : serverMessage;
-                            statusData.postValue(new Pair<>(status, message));
                         }
+                    } catch (java.net.SocketTimeoutException e) {
+                        // --- THIS IS THE MISSING PIECE ---
+                        // This is normal and expected. It allows the loop to check the isRunning flag.
+                        // We simply 'continue' to the next iteration of the while loop.
+                        continue;
                     }
-                } catch (java.net.SocketTimeoutException e) {
-                    // --- THIS IS THE MISSING PIECE ---
-                    // This is normal and expected. It allows the loop to check the isRunning flag.
-                    // We simply 'continue' to the next iteration of the while loop.
-                    continue;
-                }
                 }
             } catch (Exception e) {
                 if (isRunning.get()) {
@@ -251,11 +304,6 @@ public class CommunicationService extends Service {
     private void sendCommand(String command) {
         if (command.startsWith("START_RECORDING")) {
             recordingStartTime = System.currentTimeMillis();
-            startRecordingLocks();
-        }
-        // Trigger release if we explicitly send a stop command
-        if (command.startsWith("STOP_RECORDING")) {
-            stopRecordingLocks();
         }
         if (outputStream == null || socket == null || !socket.isConnected()) {
             Log.e(TAG, "Cannot send command, not connected.");
@@ -274,8 +322,19 @@ public class CommunicationService extends Service {
     private void disconnect() {
         Log.d(TAG, "Disconnecting...");
         isRunning.set(false);
+        
         // Crucial: Release locks when the connection drops or is closed
         stopRecordingLocks();
+
+        // Release WiFi Binding
+        if (connectivityManager != null && networkCallback != null) {
+            connectivityManager.bindProcessToNetwork(null);
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (Exception e) {
+                Log.w(TAG, "Callback already unregistered");
+            }
+        }
         try {
             if (socket != null) {
                 socket.close();
@@ -376,6 +435,7 @@ public class CommunicationService extends Service {
             wifiLock.release();
         }
     }
+
     @Override
     public void onDestroy() {
         stopRecordingLocks(); // Safety check
