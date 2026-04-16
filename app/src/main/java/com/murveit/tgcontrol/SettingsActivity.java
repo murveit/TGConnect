@@ -5,13 +5,17 @@ import android.os.Bundle;
 import android.preference.PreferenceManager;
 // ADD THESE IMPORTS
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.Spinner;
 // END IMPORTS
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.TextView;
-
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.zip.GZIPOutputStream;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -69,6 +73,21 @@ public class SettingsActivity extends AppCompatActivity {
         etDigitalGain = findViewById(R.id.etDigitalGain);
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
+
+        Button btnClearLogs = findViewById(R.id.btnClearLogs);
+        btnClearLogs.setOnClickListener(v -> {
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Clear Logs")
+                    .setMessage("Are you sure you want to delete the debug log file? This cannot be undone.")
+                    .setPositiveButton("Clear", (dialog, which) -> {
+                        clearLogs();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+
+        Button btnShareLogs = findViewById(R.id.btnShareLogs);
+        btnShareLogs.setOnClickListener(v -> shareLogFile());
 
         // ADD THIS TO SETUP THE SPINNER
         // Create an ArrayAdapter using the string array and a default spinner layout
@@ -199,6 +218,82 @@ public class SettingsActivity extends AppCompatActivity {
                 // Not needed for this app
             }
         });
+    }
+
+    private void shareLogFile() {
+        java.io.File logFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt");
+
+        if (!logFile.exists() || logFile.length() == 0) {
+            android.widget.Toast.makeText(this, "Log file is empty or not found", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            // Compress the file first
+            java.io.File compressedFile = getCompressedLogFile(logFile);
+
+            if (compressedFile == null) {
+                android.widget.Toast.makeText(this, "Failed to compress logs", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Create the URI for the .gz file instead of the .txt file
+            android.net.Uri contentUri = androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    "com.murveit.tgcontrol.fileprovider",
+                    compressedFile);
+
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            // Change type to gzip
+            intent.setType("application/gzip");
+            intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "TGControl Debug Logs (Compressed)");
+            intent.putExtra(android.content.Intent.EXTRA_STREAM, contentUri);
+            intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            startActivity(android.content.Intent.createChooser(intent, "Send logs via..."));
+        } catch (Exception e) {
+            android.util.Log.e("Settings", "Error sharing log file", e);
+            android.widget.Toast.makeText(this, "Error sharing logs", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private java.io.File getCompressedLogFile(java.io.File sourceFile) {
+        java.io.File GzipFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt.gz");
+
+        // Buffer for reading
+        byte[] buffer = new byte[1024];
+
+        try (FileInputStream fis = new FileInputStream(sourceFile);
+             FileOutputStream fos = new FileOutputStream(GzipFile);
+             GZIPOutputStream gzos = new GZIPOutputStream(fos)) {
+
+            int len;
+            while ((len = fis.read(buffer)) > 0) {
+                gzos.write(buffer, 0, len);
+            }
+            gzos.finish();
+            return GzipFile;
+
+        } catch (IOException e) {
+            android.util.Log.e("Settings", "Gzip compression failed", e);
+            return null;
+        }
+    }
+
+    private void clearLogs() {
+        try {
+            java.io.File logFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt");
+            java.io.File gzipFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt.gz");
+
+            if (logFile.exists()) logFile.delete();
+            if (gzipFile.exists()) gzipFile.delete();
+
+            android.widget.Toast.makeText(this, "Logs cleared", android.widget.Toast.LENGTH_SHORT).show();
+            FileLogger.log(this, "--- Log cleared by user ---");
+
+        } catch (Exception e) {
+            android.util.Log.e("SettingsActivity", "Error clearing logs", e);
+        }
     }
 
     @Override

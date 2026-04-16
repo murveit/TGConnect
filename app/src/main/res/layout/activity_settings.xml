@@ -191,6 +191,34 @@
                 app:layout_constraintStart_toEndOf="@id/cbAeLock"
                 app:layout_constraintTop_toTopOf="@id/cbAeLock" />
 
+            <Button
+                android:id="@+id/btnClearLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:text="Clear Debug Logs"
+                android:textAllCaps="false"
+                android:textColor="?android:attr/textColorPrimary"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/cbAeLock" />
+
+            <Button
+                android:id="@+id/btnShareLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Share Debug Logs"
+                android:textAllCaps="false"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingStart="0dp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/btnClearLogs" />
+
+
+
         </androidx.constraintlayout.widget.ConstraintLayout>
 
     </ScrollView>

@@ -66,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
         updateUIStatus("Ready", "Connect to TennisGenius AP WiFi.");
         updateRecordingButtons(false);
         updateControlButtons(false);
+        Log.d("PATH_CHECK", "Log file is at: " + getExternalFilesDir(null).getAbsolutePath());
     }
 
     private void requestNotificationPermission() {
@@ -84,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == REQUEST_CODE_POST_NOTIFICATIONS) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Permission granted. You could add logic here if needed.
-                Log.d(TAG, "POST_NOTIFICATIONS permission granted.");
+                FileLogger.log(this, "POST_NOTIFICATIONS permission granted.");
             } else {
                 // Permission denied. Inform the user that notifications are required.
                 Toast.makeText(this, "Notification permission is required for the connection status.", Toast.LENGTH_LONG).show();
@@ -127,8 +128,8 @@ public class MainActivity extends AppCompatActivity {
                 sendCommand(command);
             } else {
                 isRecording = false;
-                updateRecordingButtons(false);
                 sendCommand(CMD_STOP_RECORDING);
+                updateRecordingButtons(false);
             }
         });
 
@@ -153,8 +154,23 @@ public class MainActivity extends AppCompatActivity {
                 btnStartRecording.setText("Stop Recording");
                 btnCapturePhotos.setEnabled(false); // Disable during recording
             } else {
-                btnStartRecording.setText("Start Recording");
-                btnCapturePhotos.setEnabled(true); // Re-enable when not recording
+                // START COOLDOWN LOGIC
+                btnStartRecording.setEnabled(false); // Disable the button
+                btnStartRecording.setAlpha(0.5f);    // Visual cue it's disabled
+                btnStartRecording.setText("Finalizing...");
+
+                btnCapturePhotos.setEnabled(false); // Keep capture disabled during cooldown
+
+                // Re-enable after 2 seconds
+                mainHandler.postDelayed(() -> {
+                    btnStartRecording.setEnabled(true);
+                    btnStartRecording.setAlpha(1.0f);
+                    btnStartRecording.setText("Start Recording");
+                    btnCapturePhotos.setEnabled(true); // Re-enable capture
+
+                    // Optional: Update status line to show readiness
+                    updateUIStatus("Status", "Ready");
+                }, 2000);
             }
         });
     }
@@ -192,16 +208,26 @@ public class MainActivity extends AppCompatActivity {
                     }, 500); // A small delay to ensure the connection is fully stable.
                 }
             } else if ("Error".equals(status) || (message != null && message.startsWith("Disconnected"))) {
-                if (isConnected) { // Only update if state changes
+
+                if (isConnected) {
                     isConnected = false;
-                    isRecording = false; // Also reset recording state
+                    isRecording = false;
                     updateControlButtons(false);
+
+                    // Safety: Ensure button isn't stuck in "Finalizing" if the
+                    // connection drops during a cooldown
+                    btnStartRecording.setEnabled(true);
+                    btnStartRecording.setAlpha(1.0f);
+                    btnStartRecording.setText("Start Recording");
                 }
             } else if (status != null && status.startsWith("SERVER_STOP")) {
-
-                isRecording = false;
-                updateRecordingButtons(false);
-                sendCommand(CMD_STOP_RECORDING);
+                if (isRecording) {
+                    isRecording = false;
+                    // This will now trigger the 2-second cooldown automatically
+                    updateRecordingButtons(false);
+                    // Ensure the stop command is sent to the Orin just in case
+                    sendCommand(CMD_STOP_RECORDING);
+                }
             }
         });
 
@@ -250,7 +276,7 @@ public class MainActivity extends AppCompatActivity {
         serviceIntent.putExtra(CommunicationService.EXTRA_COMMAND, command);
         startService(serviceIntent);
 
-        Log.d(TAG, "Requested to send command: " + command.trim());
+        FileLogger.log(this, "Requested to send command: " + command.trim());
         mainHandler.post(() -> updateUIStatus("Sent", command.trim()));
     }
 
@@ -422,7 +448,7 @@ public class MainActivity extends AppCompatActivity {
             case "Chico":
                 return TG_CHICO_HOST;
             default:
-                Log.w(TAG, "Unknown network target: " + networkName + ". Defaulting to Chico.");
+                FileLogger.log(this, "Unknown network target: " + networkName + ". Defaulting to Chico.");
                 return TG_CHICO_HOST;
         }
     }
