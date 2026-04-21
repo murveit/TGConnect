@@ -36,6 +36,36 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Communication Service - Algorithmic Overview
+ *
+ * This foreground service manages the persistent TCP connection to the Jetson Orin Nano server,
+ * ensuring communication stays alive while the app is in the background or screen is off.
+ *
+ * 1. INITIALIZATION (Parameters & Dependencies):
+ * - Started via Intents.
+ * - Acquires a `PowerManager.WakeLock` (CPU) and `WifiManager.WifiLock` (Radio) to prevent OS Doze.
+ * - Dependencies: Android Network APIs, LiveData for UI syncing, TCP Sockets.
+ *
+ * 2. CALLING PROCEDURE:
+ * - Start connection: Send Intent with `ACTION_CONNECT` and `EXTRA_SERVER_ADDRESS`.
+ * - Send command: Send Intent with `ACTION_SEND_COMMAND` and `EXTRA_COMMAND`.
+ * - Stop service: Send Intent with `ACTION_DISCONNECT`.
+ *
+ * 3. INTERNAL ALGORITHMIC LOGIC (Step-by-Step):
+ * - Network Request: Requests a WiFi-only connection, explicitly removing the internet 
+ * capability requirement to prevent Android from dropping the captive portal AP.
+ * - Process Binding: Binds the entire app process to the Jetson's WiFi network (ignoring cellular).
+ * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks.
+ * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:") and intercepts
+ * binary image transfers by reading fixed-length headers.
+ * - UI Delegation: Posts parsed data and Bitmaps to statically accessible `LiveData` objects.
+ *
+ * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
+ * - Keeps the Android WiFi radio locked to the Jetson.
+ * - Streams live data to the MainActivity.
+ * - Maintains a persistent Foreground Notification.
+ */
 public class CommunicationService extends Service {
     private static final String TAG = "CommunicationService";
     private static final String NOTIFICATION_CHANNEL_ID = "TGControlChannel";
@@ -234,24 +264,36 @@ public class CommunicationService extends Service {
                             } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
                                 String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
                                 String[] parts = data.split(",");
-                                if (parts.length == 3) {
+                                if (parts.length >= 3) {
                                     try {
                                         int framesProcessed = Integer.parseInt(parts[0].trim());
                                         int framesWritten = Integer.parseInt(parts[1].trim());
                                         float freeSpaceGb = Float.parseFloat(parts[2].trim()) / 1000.0f;
 
-                                        // Hack to prevent us from filling up the disk.
-                                        final int MIN_FREE_DISK_GB = 100;
-                                        if (freeSpaceGb < MIN_FREE_DISK_GB) {
-                                            FileLogger.log(CommunicationService.this, "Stopped the recording because the free disk space is low");
-                                            statusData.postValue(new Pair<>("SERVER_STOP", "Stopping Server: Disk too full"));
-                                            break;
+                                        // Note: Architectural Decoupling
+                                        // The client-side MIN_FREE_DISK_GB logic has been removed here.
+                                        // The Orin Nano server now autonomously monitors its own hardware limits.
+
+                                        long elapsedSeconds = 0;
+                                        if (parts.length >= 4) {
+                                            // The server is the definitive source of truth for recording time
+                                            elapsedSeconds = Long.parseLong(parts[3].trim());
+                                        } else {
+                                            // Fallback for older server versions
+                                            long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
+                                            elapsedSeconds = elapsedMillis / 1000;
                                         }
 
-                                        long elapsedMillis = System.currentTimeMillis() - recordingStartTime;
-                                        long seconds = (elapsedMillis / 1000) % 60;
-                                        long minutes = (elapsedMillis / (1000 * 60)) % 60;
-                                        String elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
+                                        long seconds = elapsedSeconds % 60;
+                                        long minutes = (elapsedSeconds / 60) % 60;
+                                        long hours = elapsedSeconds / 3600;
+                                        
+                                        String elapsedTime;
+                                        if (hours > 0) {
+                                            elapsedTime = String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds);
+                                        } else {
+                                            elapsedTime = String.format(Locale.US, "%02d:%02d", minutes, seconds);
+                                        }
 
                                         String framesStatus = String.format(Locale.US, "Frames: %5d %5d | Time %s | Free Disk %.1f Gb",
                                                 framesProcessed, framesWritten, elapsedTime, freeSpaceGb);
