@@ -103,7 +103,7 @@ public class CommunicationService extends Service {
             final String action = intent.getAction();
             if (ACTION_CONNECT.equals(action)) {
                 String serverAddress = intent.getStringExtra(EXTRA_SERVER_ADDRESS);
-                FileLogger.log(this, "Connecting to: " + serverAddress);
+                FileLogger.log(CommunicationService.this, "Connecting to: " + serverAddress);
                 connect(serverAddress);
             } else if (ACTION_DISCONNECT.equals(action)) {
                 disconnect();
@@ -117,9 +117,9 @@ public class CommunicationService extends Service {
     }
 
     private void connect(String serverAddress) {
-        FileLogger.log(this, "Attempting to connect to: " + serverAddress);
+        FileLogger.log(CommunicationService.this, "Attempting to connect to: " + serverAddress);
         if (isRunning.get()) {
-            FileLogger.log(this, "Connection attempt while already running.");
+            FileLogger.log(CommunicationService.this, "Connection attempt while already running.");
             return;
         }
         isRunning.set(true);
@@ -154,6 +154,7 @@ public class CommunicationService extends Service {
         // Build a request for WiFi transport only
         NetworkRequest request = new NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build();
 
         networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -190,14 +191,14 @@ public class CommunicationService extends Service {
     private void startCommunicationThread(String serverAddress) {
         communicationThread = new Thread(() -> {
             try {
-                FileLogger.log(this, "Connecting to " + serverAddress + " on port 8000...");
+                FileLogger.log(CommunicationService.this, "Connecting to " + serverAddress + " on port 8000...");
                 statusData.postValue(new Pair<>("Status", "Connecting..."));
 
                 socket = new Socket();
                 // Because of bindProcessToNetwork, this will use WiFi even without internet
                 socket.connect(new java.net.InetSocketAddress(serverAddress, 8000), 5000);
 
-                FileLogger.log(this, "Connection successful.");
+                FileLogger.log(CommunicationService.this, "Connection successful.");
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
                 socket.setSoTimeout(500);
@@ -207,12 +208,12 @@ public class CommunicationService extends Service {
                     try {
                         String serverMessage = readLineFromStream(inputStream);
                         if (serverMessage != null && !serverMessage.isEmpty()) {
-                            FileLogger.log(this, "RECV: " + serverMessage);
+                            FileLogger.log(CommunicationService.this, "RECV: " + serverMessage);
 
                             if (serverMessage.startsWith("SERVER_STOP:")) {
                                 // Server has forced the recording to stop
                                 String reason = serverMessage.substring("SERVER_STOP:".length()).trim();
-                                FileLogger.log(this, "Server forced recording to stop. Reason: " + reason);
+                                FileLogger.log(CommunicationService.this, "Server forced recording to stop. Reason: " + reason);
                                 statusData.postValue(new Pair<>("SERVER_STOP", "Server stopped: " + reason));
                             } else if ("STATUS: CAPTURE_DONE; SENDING_IMAGES".equals(serverMessage)) {
                                 statusData.postValue(new Pair<>("Status", "Receiving images..."));
@@ -222,7 +223,7 @@ public class CommunicationService extends Service {
                                     receiveImageFrame("image1"); // Receive first image
                                     receiveImageFrame("image2"); // Receive second image
                                 } catch (IOException e) {
-                                    FileLogger.log(this, "Error during multi-image reception.", e);
+                                    FileLogger.log(CommunicationService.this, "Error during multi-image reception.", e);
                                     statusData.postValue(new Pair<>("Error", "Image transfer failed."));
                                     break; // Exit loop on critical error
                                 } finally {
@@ -242,7 +243,7 @@ public class CommunicationService extends Service {
                                         // Hack to prevent us from filling up the disk.
                                         final int MIN_FREE_DISK_GB = 100;
                                         if (freeSpaceGb < MIN_FREE_DISK_GB) {
-                                            FileLogger.log(this, "Stopped the recording because the free disk space is low");
+                                            FileLogger.log(CommunicationService.this, "Stopped the recording because the free disk space is low");
                                             statusData.postValue(new Pair<>("SERVER_STOP", "Stopping Server: Disk too full"));
                                             break;
                                         }
@@ -257,7 +258,7 @@ public class CommunicationService extends Service {
                                         statusData.postValue(new Pair<>(null, framesStatus));
 
                                     } catch (NumberFormatException e) {
-                                        FileLogger.log(this, "Failed to parse STATUS_FRAMES data: " + data, e);
+                                        FileLogger.log(CommunicationService.this, "Failed to parse STATUS_FRAMES data: " + data, e);
                                         statusData.postValue(new Pair<>(null, "Error parsing frame data"));
                                     }
                                 }
@@ -266,7 +267,7 @@ public class CommunicationService extends Service {
                                 statusData.postValue(new Pair<>(null, status));
                             } else {
                                 // For all other text messages, just post them to the UI
-                                FileLogger.log(this, "Service received: " + serverMessage);
+                                FileLogger.log(CommunicationService.this, "Service received: " + serverMessage);
                                 String[] parts = serverMessage.split(":", 2);
                                 String status = parts.length > 1 ? parts[0] : "Server";
                                 String message = parts.length > 1 ? parts[1].trim() : serverMessage;
@@ -279,7 +280,7 @@ public class CommunicationService extends Service {
                         // We simply 'continue' to the next iteration of the while loop.
                         continue;
                     } catch (IOException e) {
-                        FileLogger.log(this, "IO Error: Connection likely dropped by Orin.", e);
+                        FileLogger.log(CommunicationService.this, "IO Error: Connection likely dropped by Orin.", e);
                         // Instead of just logging, trigger a full reset
                         statusData.postValue(new Pair<>("Error", "Server dropped connection."));
                         break;
@@ -287,7 +288,7 @@ public class CommunicationService extends Service {
                 }
             } catch (Exception e) {
                 if (isRunning.get()) {
-                    FileLogger.log(this, "Connection failed or lost", e);
+                    FileLogger.log(CommunicationService.this, "Connection failed or lost", e);
                     statusData.postValue(new Pair<>("Error", "Connection lost: " + e.getMessage()));
                 }
             } finally {
@@ -298,7 +299,7 @@ public class CommunicationService extends Service {
     }
 
     private void handleServerMessage(String message) {
-        FileLogger.log(this, "Service received: " + message);
+        FileLogger.log(CommunicationService.this, "Service received: " + message);
         statusData.postValue(new Pair<>("Server:", message));
 
         if ("START_IMG_1".equals(message)) {
@@ -314,22 +315,22 @@ public class CommunicationService extends Service {
             recordingStartTime = System.currentTimeMillis();
         }
         if (outputStream == null || socket == null || !socket.isConnected()) {
-            FileLogger.log(this, "Cannot send command, not connected.");
+            FileLogger.log(CommunicationService.this, "Cannot send command, not connected.");
             return;
         }
         new Thread(() -> {
             try {
                 outputStream.write(command.getBytes(StandardCharsets.UTF_8));
                 outputStream.flush();
-                FileLogger.log(this, "Service sent command: " + command.trim());
+                FileLogger.log(CommunicationService.this, "Service sent command: " + command.trim());
             } catch (Exception e) {
-                FileLogger.log(this, "Service failed to send command", e);
+                FileLogger.log(CommunicationService.this, "Service failed to send command", e);
             }
         }).start();
     }
 
     private void disconnect() {
-        FileLogger.log(this, "Disconnecting...");
+        FileLogger.log(CommunicationService.this, "Disconnecting...");
         isRunning.set(false);
         
         // Crucial: Release locks when the connection drops or is closed
@@ -341,7 +342,7 @@ public class CommunicationService extends Service {
             try {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
             } catch (Exception e) {
-                FileLogger.log(this, "Callback already unregistered");
+                FileLogger.log(CommunicationService.this, "Callback already unregistered");
             }
         }
         try {
@@ -352,7 +353,7 @@ public class CommunicationService extends Service {
                 communicationThread.interrupt();
             }
         } catch (Exception e) {
-            FileLogger.log(this, "Error during disconnection", e);
+            FileLogger.log(CommunicationService.this, "Error during disconnection", e);
         } finally {
             socket = null;
             outputStream = null;
@@ -398,7 +399,7 @@ public class CommunicationService extends Service {
                 imageData.postValue(new Pair<>(bitmap, imageTarget)); // Post image to LiveData
             }
         } catch (Exception e) {
-            FileLogger.log(this, "Failed to receive image frame", e);
+            FileLogger.log(CommunicationService.this, "Failed to receive image frame", e);
             statusData.postValue(new Pair<>("Error", "Failed to receive image."));
         }
     }
