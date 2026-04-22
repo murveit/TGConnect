@@ -153,7 +153,7 @@
         </LinearLayout>
 
 
-        <!-- NEW: Two Image Views stacked vertically -->
+        <!-- Two Image Views stacked vertically -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"

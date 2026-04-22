@@ -60,6 +60,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:") and intercepts
  * binary image transfers by reading fixed-length headers.
  * - UI Delegation: Posts parsed data and Bitmaps to statically accessible `LiveData` objects.
+ * - Lifecycle Management: Implementation of onTaskRemoved ensures that swiping the app kills 
+ * the service and closes the socket immediately, preventing "Zombie" connections.
+ * - Data Invalidation: Explicitly clears imageData LiveData when starting new calibration or
+ * capture sequences to prevent "sticky" stale images from being shown to the user.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Keeps the Android WiFi radio locked to the Jetson.
@@ -77,6 +81,9 @@ public class CommunicationService extends Service {
     public static final String EXTRA_SERVER_ADDRESS = "com.murveit.tgcontrol.extra.SERVER_ADDRESS";
     private static final int SIZE_HEADER_LENGTH = 10;
     private long recordingStartTime = 0;
+
+    // --- Direct state exposure for UI gating ---
+    public static boolean isServerConnected = false;
 
     // --- LiveData for UI communication ---
     private static final MutableLiveData<Pair<String, String>> statusData = new MutableLiveData<>();
@@ -107,7 +114,6 @@ public class CommunicationService extends Service {
         createNotificationChannel();
 
         // 1. Initialize PowerManager WakeLock (CPU stays on)
-        // Corrected the Context reference here
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TGControl:RecordingWakeLock");
@@ -146,20 +152,36 @@ public class CommunicationService extends Service {
         return START_STICKY; // start_not_sticky
     }
 
+    /**
+     * Triggered when the user swipes the app away from the Recents screen.
+     * Overriding this ensures the Foreground Service doesn't become a "zombie".
+     */
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        FileLogger.log(this, "App swiped away. Shutting down service and connection.");
+        disconnect();
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
     private void connect(String serverAddress) {
         FileLogger.log(CommunicationService.this, "Attempting to connect to: " + serverAddress);
+        
+        // REFINEMENT: Instead of just returning, we force a cleanup of any previous
+        // zombie state to ensure the new UI instance gets a fresh socket.
         if (isRunning.get()) {
-            FileLogger.log(CommunicationService.this, "Connection attempt while already running.");
-            return;
+            FileLogger.log(CommunicationService.this, "Connection attempt while already running. Forcing reset.");
+            disconnect();
         }
+
         isRunning.set(true);
         startRecordingLocks();
 
         // 1. Show Foreground Notification
         createNotificationChannel();
         Intent notificationIntent = new Intent(this, MainActivity.class);
-        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flags);
+        int pendingFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingFlags);
 
         Notification notification = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("TGControl")
@@ -232,6 +254,9 @@ public class CommunicationService extends Service {
                 outputStream = socket.getOutputStream();
                 inputStream = socket.getInputStream();
                 socket.setSoTimeout(500);
+                
+                // Track explicitly that we have fully connected hardware
+                isServerConnected = true;
                 statusData.postValue(new Pair<>("Connected", "Ready for command."));
 
                 while (isRunning.get() && socket != null && !socket.isClosed()) {
@@ -261,6 +286,28 @@ public class CommunicationService extends Service {
                                     socket.setSoTimeout(500);
                                 }
                                 statusData.postValue(new Pair<>("Status", "Image transfer complete."));
+                                
+                            } else if ("STATUS: CALIBRATION_STARTED; SENDING_IMAGE".equals(serverMessage)) {
+                                statusData.postValue(new Pair<>("Status", "Receiving baseline image..."));
+                                try {
+                                    socket.setSoTimeout(5000);
+                                    receiveImageFrame("calibration_baseline");
+                                } catch (IOException e) {
+                                    FileLogger.log(CommunicationService.this, "Error receiving baseline image.", e);
+                                } finally {
+                                    socket.setSoTimeout(500);
+                                }
+                            } else if ("STATUS: PROCESS_COMPLETE; SENDING_VALIDATION_IMAGE".equals(serverMessage)) {
+                                statusData.postValue(new Pair<>("Status", "Receiving validation image..."));
+                                try {
+                                    socket.setSoTimeout(5000);
+                                    receiveImageFrame("calibration_validation");
+                                } catch (IOException e) {
+                                    FileLogger.log(CommunicationService.this, "Error receiving validation image.", e);
+                                } finally {
+                                    socket.setSoTimeout(500);
+                                }
+                                
                             } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
                                 String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
                                 String[] parts = data.split(",");
@@ -340,22 +387,18 @@ public class CommunicationService extends Service {
         communicationThread.start();
     }
 
-    private void handleServerMessage(String message) {
-        FileLogger.log(CommunicationService.this, "Service received: " + message);
-        statusData.postValue(new Pair<>("Server:", message));
-
-        if ("START_IMG_1".equals(message)) {
-            receiveImageFrame("image1");
-        } else if ("START_IMG_2".equals(message)) {
-            receiveImageFrame("image2");
-        }
-        // Add other message handlers here (e.g., for recording progress)
-    }
-
     private void sendCommand(String command) {
         if (command.startsWith("START_RECORDING")) {
             recordingStartTime = System.currentTimeMillis();
         }
+
+        // Clear the image buffer whenever a command that requests a new image
+        // is sent. This prevents "Sticky LiveData" from showing a stale bitmap from
+        // the previous session while the new one is loading.
+        if (command.startsWith("START_CALIBRATION") || command.startsWith("CAPTURE_PHOTO")) {
+            imageData.postValue(null);
+        }
+
         if (outputStream == null || socket == null || !socket.isConnected()) {
             FileLogger.log(CommunicationService.this, "Cannot send command, not connected.");
             return;
@@ -374,6 +417,10 @@ public class CommunicationService extends Service {
     private void disconnect() {
         FileLogger.log(CommunicationService.this, "Disconnecting...");
         isRunning.set(false);
+        isServerConnected = false; // Formally drop the network status
+        
+        // Clear the images on disconnect to ensure a clean slate for the next connection.
+        imageData.postValue(null);
         
         // Crucial: Release locks when the connection drops or is closed
         stopRecordingLocks();

@@ -32,6 +32,12 @@
             android:name=".SettingsActivity"
             android:label="Settings"
             android:theme="@style/Theme.TGControl"/>
+        <activity
+            android:name=".CalibrationActivity"
+            android:label="Calibration"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.TGControl" />
+
         <service
             android:name=".CommunicationService"
             android:enabled="true"

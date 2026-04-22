@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+  activity_calibration.xml 
+  Dedicated Control Bar Architecture: 
+  Guarantees the touch UI never occludes the image being inspected.
+  Utilizes Floating Action Buttons for clear, standard iconography.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- Active Image & Math Viewport -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/controlBar">
+        
+        <ImageView
+            android:id="@+id/ivCalibrationImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="matrix" />
+            
+        <!-- Fixed Mathematical Crosshair -->
+        <View
+            android:layout_width="2dp"
+            android:layout_height="40dp"
+            android:background="#00FF00"
+            android:layout_gravity="center" />
+        <View
+            android:layout_width="40dp"
+            android:layout_height="2dp"
+            android:background="#00FF00"
+            android:layout_gravity="center" />
+    </FrameLayout>
+
+    <!-- Dedicated Control Bar Panel -->
+    <LinearLayout
+        android:id="@+id/controlBar"
+        android:layout_width="160dp"
+        android:layout_height="match_parent"
+        android:background="#1E1E1E"
+        android:orientation="vertical"
+        android:padding="8dp"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageButton
+            android:id="@+id/btnCancel"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="end"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            app:tint="#FFFFFF"
+            android:contentDescription="Cancel Calibration" />
+        
+        <TextView
+            android:id="@+id/tvInstruction"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="Loading..."
+            android:gravity="center"
+            android:layout_marginTop="8dp" />
+            
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+            
+        <LinearLayout
+            android:id="@+id/llRetake"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btnRetake"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_revert"
+                app:backgroundTint="#424242"
+                app:tint="#FFFFFF"
+                app:fabSize="normal"
+                app:elevation="2dp"
+                android:contentDescription="Retake Photo" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Retake"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="24dp" />
+
+        <LinearLayout
+            android:id="@+id/llConfirm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btnConfirm"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_save"
+                app:backgroundTint="#2E7D32"
+                app:tint="#FFFFFF"
+                app:fabSize="normal"
+                app:elevation="4dp"
+                android:contentDescription="Confirm" />
+
+            <TextView
+                android:id="@+id/tvConfirmLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Confirm"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+    </LinearLayout>
+    
+</androidx.constraintlayout.widget.ConstraintLayout>

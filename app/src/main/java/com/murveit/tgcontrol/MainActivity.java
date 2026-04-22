@@ -1,5 +1,33 @@
 package com.murveit.tgcontrol;
 
+/**
+ * Main Activity - Algorithmic Overview
+ *
+ * This module serves as the primary user interface and control hub for the Tennis Genius system.
+ *
+ * 1. INITIALIZATION:
+ * - Requests necessary OS permissions (e.g., POST_NOTIFICATIONS for foreground services).
+ * - Binds UI components (Buttons, ImageViews, RadioGroups) to XML layouts.
+ * - Establishes listeners for user interactions (Connect, Record, Capture).
+ * - Subscribes to LiveData streams from `CommunicationService` to observe socket status and incoming images.
+ *
+ * 2. CALLING PROCEDURE:
+ * - Launched directly by Android OS upon application start.
+ *
+ * 3. INTERNAL ALGORITHMIC LOGIC:
+ * - Network Lifecycle: Constructs Intents to start/stop the `CommunicationService`, passing target IP addresses.
+ * - Command Construction: Reads UI state (RadioButtons) and SharedPreferences (Settings) to format 
+ * string-based commands (e.g., START_RECORDING:4K,JPEG,gain=1.0...) for the Orin Nano.
+ * - Event Driven Updates: Uses a Main Looper Handler to safely update UI elements (status text, bitmaps, button 
+ * enabling/disabling) strictly when the background TCP service pushes new LiveData.
+ * - Cooldown Mechanics: Enforces a 2-second UI lock after stopping a recording to prevent socket spam and 
+ * ensure the Jetson daemon cleanly tears down pipelines.
+ *
+ * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
+ * - Triggers the Foreground CommunicationService.
+ * - Renders hardware-scaled validation bitmaps received from the Jetson.
+ */
+
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -28,7 +56,6 @@ import androidx.core.content.ContextCompat;
 import java.util.Locale;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";

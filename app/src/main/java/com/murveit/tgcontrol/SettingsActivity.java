@@ -1,13 +1,39 @@
 package com.murveit.tgcontrol;
 
+/**
+ * Settings Activity - Algorithmic Overview
+ *
+ * This module provides a UI for configuring hardware-level camera parameters and network targets.
+ *
+ * 1. INITIALIZATION:
+ * - Inflates `activity_settings.xml` and binds UI widgets.
+ * - Loads persistent user preferences using `SharedPreferences`.
+ *
+ * 2. CALLING PROCEDURE:
+ * - Launched via an Intent from `MainActivity` when the gear icon is tapped.
+ *
+ * 3. INTERNAL ALGORITHMIC LOGIC:
+ * - UI Sync: Translates raw numeric values from disk into user-readable strings (e.g., converting 
+ * nanoseconds to seconds dynamically via a TextWatcher).
+ * - Volatile Storage: Holds state changes in memory while the user interacts with EditTexts and SeekBars.
+ * - Disk Persistence: Overrides the `onPause()` lifecycle method to asynchronously commit (`apply()`) 
+ * all active UI states back into `SharedPreferences` the moment the user backgrounds the activity.
+ * - Log Management: Provides utility functions to read, compress (GZIP), and share the app's debug 
+ * text logs using Android's FileProvider system.
+ * - Calibration Trigger: Checks CommunicationService LiveData to verify an active socket connection 
+ * before launching the Dedicated Control Bar (`CalibrationActivity`) to align cameras.
+ *
+ * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
+ * - Writes configuration data to device storage, mutating the parameters used by `MainActivity`.
+ * - Launches intents for external applications (e.g., Email, Drive) to share `.gz` log files.
+ */
+
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
-// ADD THESE IMPORTS
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.Spinner;
-// END IMPORTS
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.SeekBar;
@@ -89,7 +115,13 @@ public class SettingsActivity extends AppCompatActivity {
         Button btnShareLogs = findViewById(R.id.btnShareLogs);
         btnShareLogs.setOnClickListener(v -> shareLogFile());
 
-        // ADD THIS TO SETUP THE SPINNER
+        // --- CALIBRATION ROUTING ---
+        Button btnCalibrateLeft = findViewById(R.id.btnCalibrateLeft);
+        btnCalibrateLeft.setOnClickListener(v -> launchCalibration(0));
+
+        Button btnCalibrateRight = findViewById(R.id.btnCalibrateRight);
+        btnCalibrateRight.setOnClickListener(v -> launchCalibration(1));
+
         // Create an ArrayAdapter using the string array and a default spinner layout
         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
                 R.array.connection_options, android.R.layout.simple_spinner_item);
@@ -101,6 +133,16 @@ public class SettingsActivity extends AppCompatActivity {
         // 4. Load saved values when the activity starts
         loadSettings();
         setupSeekBarListeners();
+    }
+
+    private void launchCalibration(int sensorId) {
+        if (CommunicationService.isServerConnected) {
+            android.content.Intent intent = new android.content.Intent(SettingsActivity.this, CalibrationActivity.class);
+            intent.putExtra("SENSOR_ID", sensorId);
+            startActivity(intent);
+        } else {
+            android.widget.Toast.makeText(this, "Please connect to the Tennis Genius before calibrating.", android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void setupNanoToSecondsWatcher(EditText editText, TextView outputTextView) {
