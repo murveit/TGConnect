@@ -17,6 +17,8 @@ package com.murveit.tgcontrol;
  * 3. INTERNAL ALGORITHMIC LOGIC:
  * - Matrix Math: Touch events do not move an image; they apply affine transformations (Translation/Scale) 
  * to an `android.graphics.Matrix` object attached to the ImageView. 
+ * - Gestures: Supports two-finger pinch for granular scaling, one-finger drag for translation, and 
+ * single-tap for a one-time strong zoom centered on the tapped coordinate.
  * - Inverse Mapping: The UI renders a fixed crosshair at exactly (ViewWidth / 2, ViewHeight / 2). 
  * When the user taps "Confirm", the mathematical inverse of the current affine Matrix is calculated. 
  * The screen's center point is multiplied through this inverted matrix to yield the exact sub-pixel 
@@ -61,6 +63,7 @@ public class CalibrationActivity extends AppCompatActivity {
     
     // --- Algorithmic Constants ---
     private static final float TCP_SCALE_FACTOR = 0.5f; // Forces Jetson to downsample 4K to 1080p
+    private static final float STRONG_ZOOM_MULTIPLIER = 12.0f; // Target scale multiplier for single tap
     
     private static final int STATE_LOADING = 0;
     private static final int STATE_TARGET_FAR_OUT = 1;
@@ -75,6 +78,7 @@ public class CalibrationActivity extends AppCompatActivity {
     private int currentState = STATE_LOADING;
     private Bitmap currentBitmap = null;
     private List<Float> extractedCoords = new ArrayList<>();
+    private float baseScale = 1.0f;
 
     // --- Matrix Math ---
     private Matrix imageMatrix = new Matrix();
@@ -147,6 +151,23 @@ public class CalibrationActivity extends AppCompatActivity {
                 ivCalibrationImage.setImageMatrix(imageMatrix);
                 return true;
             }
+
+            @Override
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                // Algorithmic step: Apply a single strong zoom only if near the base view.
+                // Further zooming is delegated to the user's pinch gestures.
+                float[] values = new float[9];
+                imageMatrix.getValues(values);
+                float currentScale = values[Matrix.MSCALE_X];
+                
+                if (currentScale < baseScale * 2.0f) {
+                    float targetScale = baseScale * STRONG_ZOOM_MULTIPLIER;
+                    float scaleFactor = targetScale / currentScale;
+                    imageMatrix.postScale(scaleFactor, scaleFactor, e.getX(), e.getY());
+                    ivCalibrationImage.setImageMatrix(imageMatrix);
+                }
+                return true;
+            }
         });
 
         ivCalibrationImage.setOnTouchListener((v, event) -> {
@@ -201,11 +222,11 @@ public class CalibrationActivity extends AppCompatActivity {
         if (viewWidth == 0 || viewHeight == 0) return;
         
         // Scale to perfectly fit the vertical bounds of the landscape display
-        float scale = (float) viewHeight / bmp.getHeight();
-        imageMatrix.postScale(scale, scale);
+        baseScale = (float) viewHeight / bmp.getHeight();
+        imageMatrix.postScale(baseScale, baseScale);
         
         // Center horizontally
-        float scaledWidth = bmp.getWidth() * scale;
+        float scaledWidth = bmp.getWidth() * baseScale;
         float tx = (viewWidth - scaledWidth) / 2f;
         imageMatrix.postTranslate(tx, 0);
         

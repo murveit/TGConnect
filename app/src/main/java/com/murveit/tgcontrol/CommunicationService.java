@@ -56,7 +56,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - Network Request: Requests a WiFi-only connection, explicitly removing the internet 
  * capability requirement to prevent Android from dropping the captive portal AP.
  * - Process Binding: Binds the entire app process to the Jetson's WiFi network (ignoring cellular).
- * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks.
+ * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks utilizing a 
+ * persistent ByteArrayOutputStream to safely handle fragmented TCP packets and socket timeouts.
  * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:") and intercepts
  * binary image transfers by reading fixed-length headers.
  * - UI Delegation: Posts parsed data and Bitmaps to statically accessible `LiveData` objects.
@@ -98,6 +99,9 @@ public class CommunicationService extends Service {
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    
+    // Algorithmic Fix: Persistent buffer to survive SocketTimeoutExceptions during slow TCP transfers
+    private final ByteArrayOutputStream currentLineBuffer = new ByteArrayOutputStream();
 
     // --- Public accessors for MainActivity to observe LiveData ---
     public static LiveData<Pair<String, String>> getStatusData() {
@@ -257,6 +261,7 @@ public class CommunicationService extends Service {
                 
                 // Track explicitly that we have fully connected hardware
                 isServerConnected = true;
+                currentLineBuffer.reset(); // Guarantee clean slate on new connection
                 statusData.postValue(new Pair<>("Connected", "Ready for command."));
 
                 while (isRunning.get() && socket != null && !socket.isClosed()) {
@@ -364,9 +369,8 @@ public class CommunicationService extends Service {
                             }
                         }
                     } catch (java.net.SocketTimeoutException e) {
-                        // --- THIS IS THE MISSING PIECE ---
-                        // This is normal and expected. It allows the loop to check the isRunning flag.
-                        // We simply 'continue' to the next iteration of the while loop.
+                        // This allows the loop to check the isRunning flag harmlessly.
+                        // Because currentLineBuffer is now persistent, we don't lose fragmented streams.
                         continue;
                     } catch (IOException e) {
                         FileLogger.log(CommunicationService.this, "IO Error: Connection likely dropped by Orin.", e);
@@ -454,15 +458,16 @@ public class CommunicationService extends Service {
 
     // --- Data Reading Methods ---
     private String readLineFromStream(InputStream is) throws IOException {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int byteRead;
         while (isRunning.get()) {
-            byteRead = is.read();
+            byteRead = is.read(); // Can throw SocketTimeoutException
             if (byteRead == -1) throw new IOException("End of stream");
             if (byteRead == '\n') break;
-            buffer.write(byteRead);
+            currentLineBuffer.write(byteRead);
         }
-        return buffer.toString(StandardCharsets.UTF_8.name()).trim();
+        String completeLine = currentLineBuffer.toString(StandardCharsets.UTF_8.name()).trim();
+        currentLineBuffer.reset(); // Wipe buffer only upon confirming a complete newline payload
+        return completeLine;
     }
 
     private byte[] readFullData(InputStream is, int length) throws IOException {

@@ -4,6 +4,7 @@ package com.murveit.tgcontrol;
  * Settings Activity - Algorithmic Overview
  *
  * This module provides a UI for configuring hardware-level camera parameters and network targets.
+ * Note: Calibration launch functionality has been moved to the Tennis Menu in MainActivity.
  *
  * 1. INITIALIZATION:
  * - Inflates `activity_settings.xml` and binds UI widgets.
@@ -20,8 +21,6 @@ package com.murveit.tgcontrol;
  * all active UI states back into `SharedPreferences` the moment the user backgrounds the activity.
  * - Log Management: Provides utility functions to read, compress (GZIP), and share the app's debug 
  * text logs using Android's FileProvider system.
- * - Calibration Trigger: Checks CommunicationService LiveData to verify an active socket connection 
- * before launching the Dedicated Control Bar (`CalibrationActivity`) to align cameras.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Writes configuration data to device storage, mutating the parameters used by `MainActivity`.
@@ -50,7 +49,6 @@ import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
 
-    // 1. Define keys for SharedPreferences
     public static final String KEY_CONNECTION_TARGET = "connection_target_name";
     public static final String KEY_AE_LOCK = "ae_lock";
     public static final String KEY_AWB_LOCK = "awb_lock";
@@ -60,8 +58,7 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_DIGITAL_GAIN = "digital_gain";
     public static final String KEY_EXP_COMP_PROGRESS = "exp_comp_progress";
 
-    // 2. Declare all the widgets
-    private Spinner spnConnectionTarget; // ADD THIS
+    private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
     private CheckBox cbAwbLock;
     private EditText etExposureLow;
@@ -83,8 +80,7 @@ public class SettingsActivity extends AppCompatActivity {
             getSupportActionBar().setTitle("");
         }
 
-        // 3. Find all the views
-        spnConnectionTarget = findViewById(R.id.spnConnectionTarget); // ADD THIS
+        spnConnectionTarget = findViewById(R.id.spnConnectionTarget);
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
         etExposureLow = findViewById(R.id.etExposureLow);
@@ -115,13 +111,6 @@ public class SettingsActivity extends AppCompatActivity {
         Button btnShareLogs = findViewById(R.id.btnShareLogs);
         btnShareLogs.setOnClickListener(v -> shareLogFile());
 
-        // --- CALIBRATION ROUTING ---
-        Button btnCalibrateLeft = findViewById(R.id.btnCalibrateLeft);
-        btnCalibrateLeft.setOnClickListener(v -> launchCalibration(0));
-
-        Button btnCalibrateRight = findViewById(R.id.btnCalibrateRight);
-        btnCalibrateRight.setOnClickListener(v -> launchCalibration(1));
-
         // Create an ArrayAdapter using the string array and a default spinner layout
         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
                 R.array.connection_options, android.R.layout.simple_spinner_item);
@@ -133,16 +122,6 @@ public class SettingsActivity extends AppCompatActivity {
         // 4. Load saved values when the activity starts
         loadSettings();
         setupSeekBarListeners();
-    }
-
-    private void launchCalibration(int sensorId) {
-        if (CommunicationService.isServerConnected) {
-            android.content.Intent intent = new android.content.Intent(SettingsActivity.this, CalibrationActivity.class);
-            intent.putExtra("SENSOR_ID", sensorId);
-            startActivity(intent);
-        } else {
-            android.widget.Toast.makeText(this, "Please connect to the Tennis Genius before calibrating.", android.widget.Toast.LENGTH_LONG).show();
-        }
     }
 
     private void setupNanoToSecondsWatcher(EditText editText, TextView outputTextView) {
@@ -159,19 +138,12 @@ public class SettingsActivity extends AppCompatActivity {
                     outputTextView.setText("0.000 sec");
                     return;
                 }
-
                 try {
-                    // Parse nanoseconds (long)
                     long nanoseconds = Long.parseLong(s.toString());
-
-                    // Convert to seconds (double)
                     double seconds = nanoseconds / 1_000_000_000.0;
-
                     if (seconds > 0 && seconds < 0.001) {
-                        // For very small non-zero values, show more precision
                         outputTextView.setText(String.format(java.util.Locale.US, "%.6f sec", seconds));
                     } else {
-                        // Standard precision
                         outputTextView.setText(String.format(java.util.Locale.US, "%.3f sec", seconds));
                     }
                 } catch (NumberFormatException e) {
@@ -180,22 +152,20 @@ public class SettingsActivity extends AppCompatActivity {
             }
         });
     }
+
     private void loadSettings() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
         String savedTarget = prefs.getString(KEY_CONNECTION_TARGET, "Chico");
         ArrayAdapter<CharSequence> adapter = (ArrayAdapter<CharSequence>) spnConnectionTarget.getAdapter();
         if (adapter != null) {
-            // Find the position of the saved string in the adapter
             int position = adapter.getPosition(savedTarget);
-            // Set the spinner to that position. If not found, it defaults to 0.
             spnConnectionTarget.setSelection(position >= 0 ? position : 0);
         }
         cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
-        etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L))); // Use long for exposure
-
-        etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L))); // Use long for exposure
+        etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
+        etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
         etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
         etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
 
@@ -213,80 +183,61 @@ public class SettingsActivity extends AppCompatActivity {
         editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
         editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
 
-        // Safely parse numbers from EditTexts, with defaults
         try {
             editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));
         } catch (NumberFormatException e) {
-            editor.putLong(KEY_EXPOSURE_LOW, 10000L); // Default value
+            editor.putLong(KEY_EXPOSURE_LOW, 10000L);
         }
         try {
             editor.putLong(KEY_EXPOSURE_HIGH, Long.parseLong(etExposureHigh.getText().toString()));
         } catch (NumberFormatException e) {
-            editor.putLong(KEY_EXPOSURE_HIGH, 10000L); // Default value
+            editor.putLong(KEY_EXPOSURE_HIGH, 10000L);
         }
         try {
             editor.putFloat(KEY_GAIN, Float.parseFloat(etGain.getText().toString()));
         } catch (NumberFormatException e) {
-            editor.putFloat(KEY_GAIN, 1.0f); // Default value
+            editor.putFloat(KEY_GAIN, 1.0f);
         }
         try {
             editor.putFloat(KEY_DIGITAL_GAIN, Float.parseFloat(etDigitalGain.getText().toString()));
         } catch (NumberFormatException e) {
-            editor.putFloat(KEY_DIGITAL_GAIN, 1.0f); // Default value
+            editor.putFloat(KEY_DIGITAL_GAIN, 1.0f);
         }
 
         editor.putInt(KEY_EXP_COMP_PROGRESS, sbExpComp.getProgress());
-
-        editor.apply(); // Save asynchronously
+        editor.apply();
     }
-
 
     private void setupSeekBarListeners() {
         sbExpComp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // The progress is 0-16, with 8 being the center (0.0)
                 float value = (progress - 8) * 0.25f;
                 tvExpCompLabel.setText(String.format(Locale.US, "Exp Comp: %+1.2f", value));
             }
-
             @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-                // Not needed for this app
-            }
-
+            public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                // Not needed for this app
-            }
+            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
     }
 
     private void shareLogFile() {
         java.io.File logFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt");
-
         if (!logFile.exists() || logFile.length() == 0) {
             android.widget.Toast.makeText(this, "Log file is empty or not found", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-
         try {
-            // Compress the file first
             java.io.File compressedFile = getCompressedLogFile(logFile);
-
             if (compressedFile == null) {
                 android.widget.Toast.makeText(this, "Failed to compress logs", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
-
-            // Create the URI for the .gz file instead of the .txt file
             android.net.Uri contentUri = androidx.core.content.FileProvider.getUriForFile(
-                    this,
-                    "com.murveit.tgcontrol.fileprovider",
-                    compressedFile);
+                    this, "com.murveit.tgcontrol.fileprovider", compressedFile);
 
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_SEND);
-            // Change type to gzip
             intent.setType("application/gzip");
             intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "TGControl Debug Logs (Compressed)");
             intent.putExtra(android.content.Intent.EXTRA_STREAM, contentUri);
@@ -301,21 +252,16 @@ public class SettingsActivity extends AppCompatActivity {
 
     private java.io.File getCompressedLogFile(java.io.File sourceFile) {
         java.io.File GzipFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt.gz");
-
-        // Buffer for reading
         byte[] buffer = new byte[1024];
-
         try (FileInputStream fis = new FileInputStream(sourceFile);
              FileOutputStream fos = new FileOutputStream(GzipFile);
              GZIPOutputStream gzos = new GZIPOutputStream(fos)) {
-
             int len;
             while ((len = fis.read(buffer)) > 0) {
                 gzos.write(buffer, 0, len);
             }
             gzos.finish();
             return GzipFile;
-
         } catch (IOException e) {
             android.util.Log.e("Settings", "Gzip compression failed", e);
             return null;
@@ -326,13 +272,10 @@ public class SettingsActivity extends AppCompatActivity {
         try {
             java.io.File logFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt");
             java.io.File gzipFile = new java.io.File(getExternalFilesDir(null), "tgcontrol_logs.txt.gz");
-
             if (logFile.exists()) logFile.delete();
             if (gzipFile.exists()) gzipFile.delete();
-
             android.widget.Toast.makeText(this, "Logs cleared", android.widget.Toast.LENGTH_SHORT).show();
             FileLogger.log(this, "--- Log cleared by user ---");
-
         } catch (Exception e) {
             android.util.Log.e("SettingsActivity", "Error clearing logs", e);
         }
@@ -341,7 +284,6 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        // 5. Save the settings whenever the user leaves the activity
         saveSettings();
     }
 
