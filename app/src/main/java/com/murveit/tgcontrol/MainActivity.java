@@ -7,6 +7,7 @@ package com.murveit.tgcontrol;
  *
  * 1. INITIALIZATION:
  * - Binds calibration checkmark ImageViews and mode selection buttons.
+ * - Instantiates TextToSpeech and ToneGenerator engines to provide auditory user feedback.
  * - On creation or recreation (e.g., orientation changes), checks the persistent `CommunicationService` 
  * to see if an active socket exists. If so, it recovers the UI state seamlessly without dropping the connection.
  * - Sets default UI state to DISCONNECTED if no active connection is found.
@@ -19,22 +20,27 @@ package com.murveit.tgcontrol;
  * - Toggles checkmark visibility and dynamically manages `.setEnabled()` states on the tennis mode buttons, 
  * enforcing the algorithmic requirement that both cameras must be calibrated before play modes unlock.
  * - Intercepts "CALIBRATION_SAVED" to instantly query and update UI when returning from CalibrationActivity.
+ * - JSON Interception: Parses "TRACK_EVENT_JSON" and utilizes TextToSpeech to vocally call "Faults" 
+ * or triggers a ToneGenerator "beep" for "In" balls during Serve Practice mode.
  *
  * 3. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Visually disables (greys out) or enables Singles, Doubles, Serve, and Rally buttons in real-time.
  * - Dispatches specific startup, telemetry, and tracking stop/start strings to the TCP socket layer.
+ * - Generates physical audio outputs (Voice synthesis, DTMF tones) matching real-time point progression.
  */
 
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.preference.PreferenceManager;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -70,11 +76,23 @@ public class MainActivity extends AppCompatActivity {
     // Represents the server's boolean-integer string for an active calibration
     private static final String CALIBRATION_ACTIVE_STR = "1";
 
-// --- Algorithmic Constants for Play Modes ---
+    // --- Algorithmic Constants for Play Modes ---
     private static final String MODE_SINGLES = "SINGLES";
     private static final String MODE_DOUBLES = "DOUBLES";
     private static final String MODE_SERVE_PRACTICE = "SERVE_PRACTICE";
     private static final String MODE_RALLY_PRACTICE = "RALLY_PRACTICE";
+
+    // --- Algorithmic Constants for Auditory Feedback ---
+    // Represents the volume level for the 'in' beep tone generator (0-100)
+    private static final int BEEP_VOLUME_MAX = 100;
+    // Represents the duration in milliseconds for the happy 'in' beep
+    private static final int HAPPY_BEEP_DURATION_MS = 150;
+    // The text string spoken by TTS when a serve is out
+    private static final String TTS_TEXT_FAULT = "Fault";
+    // The text string spoken by TTS when a serve is a let
+    private static final String TTS_TEXT_LET = "Let";
+    // Cooldown duration in milliseconds before repeating "miles per hour"
+    private static final long MPH_COOLDOWN_MS = 60000;
 
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
@@ -100,6 +118,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean isLeftCalibrated = false;
     private boolean isRightCalibrated = false;
 
+    // Tracks the last time the full "miles per hour" suffix was spoken
+    private long lastSpokenMphTimeMs = 0;
+
     private Button btnBack, btnConnect;
     private ImageButton btnPowerOff, btnSettings;
     private LinearLayout llHome, llHomeButtons, llRawRecording, llTennisMenu, llActiveTennis;
@@ -109,6 +130,10 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private CheckBox cbRecordSession;
+    
+    // Hardware Audio Engines
+    private TextToSpeech textToSpeech;
+    private ToneGenerator toneGenerator;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,6 +141,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         requestNotificationPermission();
         mainHandler = new Handler(Looper.getMainLooper());
+        
+        // Initialize Audio Engines
+        toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, BEEP_VOLUME_MAX);
+        textToSpeech = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech.setLanguage(Locale.US);
+            }
+        });
+        
         initializeUI();
         setupListeners();
         setupObservers();
@@ -262,6 +296,44 @@ public class MainActivity extends AppCompatActivity {
                     String formatted = String.format(Locale.US, "%s%s. %s. %.0fmph", 
                                                      timePrefix, strikeType, callStr, mph);
                     appendToTrackingLog(formatted);
+                    
+                    // --- AUDIO FEEDBACK FOR SERVE PRACTICE ---
+                    if (MODE_SERVE_PRACTICE.equals(activeTennisMode)) {
+                        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
+                        boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+                        boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
+                        boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
+
+                        int mphInt = (int) Math.round(mph);
+                        
+                        String ttsMphStr;
+                        long currentTime = System.currentTimeMillis();
+                        if (currentTime - lastSpokenMphTimeMs > MPH_COOLDOWN_MS) {
+                            ttsMphStr = mphInt + " miles per hour";
+                            lastSpokenMphTimeMs = currentTime;
+                        } else {
+                            ttsMphStr = String.valueOf(mphInt);
+                        }
+
+                        if ("In".equalsIgnoreCase(callStr)) {
+                            if (speakMph && textToSpeech != null) {
+                                textToSpeech.speak(ttsMphStr, TextToSpeech.QUEUE_FLUSH, null, null);
+                            } else if (playBeep && toneGenerator != null) {
+                                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
+                            }
+                        } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+                            if (playVoice && textToSpeech != null) {
+                                String text = speakMph ? TTS_TEXT_FAULT + ", " + ttsMphStr : TTS_TEXT_FAULT;
+                                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+                            }
+                        } else if ("Let".equalsIgnoreCase(callStr)) {
+                            if (playVoice && textToSpeech != null) {
+                                String text = speakMph ? TTS_TEXT_LET + ", " + ttsMphStr : TTS_TEXT_LET;
+                                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+                            }
+                        }
+                    }
+
                 } catch (Exception e) {
                     FileLogger.log(this, "JSON Parse Error", e);
                 }
@@ -491,5 +563,17 @@ public class MainActivity extends AppCompatActivity {
         if (currentState == STATE_ACTIVE_TENNIS && !isTracking) switchState(STATE_TENNIS_MENU);
         else if ((currentState == STATE_RAW_RECORDING || currentState == STATE_TENNIS_MENU) && !isRecording) switchState(STATE_HOME);
         else super.onBackPressed();
+    }
+    
+    @Override
+    protected void onDestroy() {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
+        if (toneGenerator != null) {
+            toneGenerator.release();
+        }
+        super.onDestroy();
     }
 }

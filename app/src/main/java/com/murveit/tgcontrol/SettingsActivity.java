@@ -17,6 +17,7 @@ package com.murveit.tgcontrol;
  * - UI Sync: Translates raw numeric values from disk into user-readable strings (e.g., converting 
  * nanoseconds to seconds dynamically via a TextWatcher).
  * - Volatile Storage: Holds state changes in memory while the user interacts with EditTexts and SeekBars.
+ * - Audio Toggles: Stores user preferences for voice-assisted Line Calls and Beeps.
  * - Disk Persistence: Overrides the `onPause()` lifecycle method to asynchronously commit (`apply()`) 
  * all active UI states back into `SharedPreferences` the moment the user backgrounds the activity.
  * - Log Management: Provides utility functions to read, compress (GZIP), and share the app's debug 
@@ -57,10 +58,18 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_GAIN = "gain";
     public static final String KEY_DIGITAL_GAIN = "digital_gain";
     public static final String KEY_EXP_COMP_PROGRESS = "exp_comp_progress";
+    
+    // --- Audio Feedback Constants ---
+    public static final String KEY_VOICE_CALLS = "voice_calls";
+    public static final String KEY_BEEP_IN = "beep_in";
+    public static final String KEY_SPEAK_MPH = "speak_mph";
 
     private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
     private CheckBox cbAwbLock;
+    private CheckBox cbVoiceCalls;
+    private CheckBox cbBeepIn;
+    private CheckBox cbSpeakMph;
     private EditText etExposureLow;
     private EditText etExposureHigh;
     private EditText etGain;
@@ -83,6 +92,10 @@ public class SettingsActivity extends AppCompatActivity {
         spnConnectionTarget = findViewById(R.id.spnConnectionTarget);
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
+        cbVoiceCalls = findViewById(R.id.cbVoiceCalls);
+        cbBeepIn = findViewById(R.id.cbBeepIn);
+        cbSpeakMph = findViewById(R.id.cbSpeakMph);
+
         etExposureLow = findViewById(R.id.etExposureLow);
         TextView tvExposureLowSeconds = findViewById(R.id.tvExposureLowSeconds);
         setupNanoToSecondsWatcher(etExposureLow, tvExposureLowSeconds);
@@ -164,6 +177,10 @@ public class SettingsActivity extends AppCompatActivity {
         }
         cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
+        cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
+        cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
+        cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
+
         etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
         etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
         etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
@@ -182,6 +199,9 @@ public class SettingsActivity extends AppCompatActivity {
         editor.putString(KEY_CONNECTION_TARGET, spnConnectionTarget.getSelectedItem().toString());
         editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
         editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
+        editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
+        editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
+        editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
 
         try {
             editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));
