@@ -218,6 +218,14 @@
                     android:gravity="center"
                     android:paddingBottom="16dp" />
 
+                <CheckBox
+                    android:id="@+id/cbRecordSession"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="Record"
+                    android:textSize="18sp" />
+
                 <Button android:id="@+id/btnModeSingles" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Singles Match" />
                 <Button android:id="@+id/btnModeDoubles" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Doubles Match" />
                 <Button android:id="@+id/btnModeServe" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Serve Practice" />
@@ -299,6 +307,17 @@
                     android:textStyle="bold"
                     android:gravity="center"
                     android:paddingBottom="16dp" />
+
+                <TextView
+                    android:id="@+id/tvLiveTelemetry"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="0:00 ⏱️ 0.0 FPS"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:paddingBottom="16dp"
+                    android:textColor="#A0A0A0" />
 
                 <Button
                     android:id="@+id/btnStartTracking"

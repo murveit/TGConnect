@@ -38,6 +38,7 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -69,6 +70,12 @@ public class MainActivity extends AppCompatActivity {
     // Represents the server's boolean-integer string for an active calibration
     private static final String CALIBRATION_ACTIVE_STR = "1";
 
+// --- Algorithmic Constants for Play Modes ---
+    private static final String MODE_SINGLES = "SINGLES";
+    private static final String MODE_DOUBLES = "DOUBLES";
+    private static final String MODE_SERVE_PRACTICE = "SERVE_PRACTICE";
+    private static final String MODE_RALLY_PRACTICE = "RALLY_PRACTICE";
+
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
     private static final String TG_CHICO_HOST = "192.168.86.43";
@@ -87,7 +94,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isConnected = false;
     private boolean isRecording = false;
     private boolean isTracking = false;
-    private String activeTennisMode = "SINGLES";
+    private String activeTennisMode = MODE_SINGLES;
     
     // Tracking active calibration states for UI locking
     private boolean isLeftCalibrated = false;
@@ -99,8 +106,9 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvHomeMessage, tvStatusLine1, tvStatusLine2;
     private Button btnGoRawRecording, btnGoTennis, btnStartRecording, btnCapturePhotos, btnStartTracking;
     private ImageView ivImage1, ivImage2, ivCheckLeft, ivCheckRight;
-    private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode;
+    private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
+    private CheckBox cbRecordSession;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -164,6 +172,8 @@ public class MainActivity extends AppCompatActivity {
         btnStartTracking = findViewById(R.id.btnStartTracking);
         tvTrackingLog = findViewById(R.id.tvTrackingLog);
         tvSelectPlayMode = findViewById(R.id.tvSelectPlayMode);
+        tvLiveTelemetry = findViewById(R.id.tvLiveTelemetry);
+        cbRecordSession = findViewById(R.id.cbRecordSession);
         
         // Force evaluation to ensure buttons are correctly disabled by default on startup
         updateTennisModeButtonsState();
@@ -179,10 +189,10 @@ public class MainActivity extends AppCompatActivity {
         btnBack.setOnClickListener(v -> onBackPressed());
         btnGoRawRecording.setOnClickListener(v -> switchState(STATE_RAW_RECORDING));
         btnGoTennis.setOnClickListener(v -> switchState(STATE_TENNIS_MENU));
-        btnModeSingles.setOnClickListener(v -> startTennisModeUI("SINGLES", "Singles Match"));
-        btnModeDoubles.setOnClickListener(v -> startTennisModeUI("DOUBLES", "Doubles Match"));
-        btnModeServe.setOnClickListener(v -> startTennisModeUI("SERVE_PRACTICE", "Serve Practice"));
-        btnModeRally.setOnClickListener(v -> startTennisModeUI("RALLY", "Rally Practice"));
+        btnModeSingles.setOnClickListener(v -> startTennisModeUI(MODE_SINGLES, "Singles Match"));
+        btnModeDoubles.setOnClickListener(v -> startTennisModeUI(MODE_DOUBLES, "Doubles Match"));
+        btnModeServe.setOnClickListener(v -> startTennisModeUI(MODE_SERVE_PRACTICE, "Serve Practice"));
+        btnModeRally.setOnClickListener(v -> startTennisModeUI(MODE_RALLY_PRACTICE, "Rally Practice"));
         btnCalibrateLeft.setOnClickListener(v -> launchCalibration(0));
         btnCalibrateRight.setOnClickListener(v -> launchCalibration(1));
         btnStartRecording.setOnClickListener(v -> toggleRecording());
@@ -226,7 +236,40 @@ public class MainActivity extends AppCompatActivity {
             String message = statusPair.second;
 
             if ("TRACK_EVENT".equals(status)) {
-                tvTrackingLog.append("\n" + message);
+                appendToTrackingLog(message);
+                return;
+            }
+
+            if ("TRACK_EVENT_JSON".equals(status)) {
+                try {
+                    org.json.JSONObject json = new org.json.JSONObject(message);
+                    String wallClock = json.optString("wall_clock", "");
+                    String strikeType = json.optString("strike_type", "Hit");
+                    String callStr = json.optString("call_str", "Unknown");
+                    double mph = json.optDouble("speed_mph", 0.0);
+                    double sX = json.optDouble("strike_x", 0.0);
+                    double sY = json.optDouble("strike_y", 0.0);
+                    double bX = json.optDouble("bounce_x", 0.0);
+                    double bY = json.optDouble("bounce_y", 0.0);
+                    
+                    if (strikeType.length() > 0) {
+                        strikeType = strikeType.substring(0, 1).toUpperCase() + strikeType.substring(1);
+                    }
+                    
+                    String timePrefix = wallClock.isEmpty() ? "" : wallClock + " ";
+
+                    // Customize by mode? Check if mph exists? Plot?
+                    String formatted = String.format(Locale.US, "%s%s. %s. %.0fmph", 
+                                                     timePrefix, strikeType, callStr, mph);
+                    appendToTrackingLog(formatted);
+                } catch (Exception e) {
+                    FileLogger.log(this, "JSON Parse Error", e);
+                }
+                return;
+            }
+
+            if ("TRACK_TELEMETRY".equals(status)) {
+                tvLiveTelemetry.setText(message);
                 return;
             }
 
@@ -324,7 +367,7 @@ public class MainActivity extends AppCompatActivity {
         if (!isTracking) {
             isTracking = true;
             updateTrackingButtons(true);
-            tvTrackingLog.setText("--- Spinning Up ---");
+            tvTrackingLog.setText("");
             sendCommand(buildStartTrackingCommand(activeTennisMode));
         } else {
             isTracking = false;
@@ -362,6 +405,17 @@ public class MainActivity extends AppCompatActivity {
         mainHandler.post(() -> {
             btnStartTracking.setText(active ? "Stop" : "Start");
             btnBack.setEnabled(!active);
+        });
+    }
+
+    private void appendToTrackingLog(String text) {
+        tvTrackingLog.append("\n" + text);
+        // Post to message queue to ensure the UI paints the new text before scrolling
+        tvTrackingLog.post(() -> {
+            android.widget.ScrollView scrollView = (android.widget.ScrollView) tvTrackingLog.getParent();
+            if (scrollView != null) {
+                scrollView.fullScroll(View.FOCUS_DOWN);
+            }
         });
     }
 
@@ -411,7 +465,10 @@ public class MainActivity extends AppCompatActivity {
 
     private String buildCaptureCommand() { return "CAPTURE_PHOTO:" + getSettingsPayload(false).replace("4K,JPEG,", "4K,JPEG,0.25,"); }
     private String buildStartRecordingCommand() { return "START_RECORDING:" + getSettingsPayload(false); }
-    private String buildStartTrackingCommand(String m) { return "START_TRACKING:" + m + "," + getSettingsPayload(true); }
+    private String buildStartTrackingCommand(String m) {
+        String recordFlag = cbRecordSession != null && cbRecordSession.isChecked() ? "RECORD=1" : "RECORD=0";
+        return "START_TRACKING:" + m + "," + recordFlag + "," + getSettingsPayload(true);
+    }
     private String buildSetTimeCommand() { return "SET_TIME:" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()) + "\n"; }
 
     private void updateUIStatus(String l1, String l2) {
