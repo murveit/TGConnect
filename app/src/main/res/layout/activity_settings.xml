@@ -1,259 +1,248 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 
+ * Settings Activity Layout - Algorithmic Overview
+ *
+ * 1. INITIALIZATION:
+ * - Establishes a scrolling vertical list architecture to safely accommodate all system preferences.
+ *
+ * 2. CALLING PROCEDURE:
+ * - Inflated by SettingsActivity.java when the user opens the settings menu.
+ *
+ * 3. INTERNAL ALGORITHMIC LOGIC:
+ * - Architecture: Uses a root LinearLayout within a ScrollView. This guarantees that elements 
+ * flow sequentially and mathematically prevents the Z-axis overlapping issues common in 
+ * broken ConstraintLayout chains.
+ * - Compaction: Checkbox minHeight and vertical margins are minimized to reduce white space.
+ * - Grouping: Related hardware, algorithmic, and audio feedback elements are clustered.
+ *
+ * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
+ * - Defines the visual hierarchy and widget IDs bound during SettingsActivity initialization.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp"
-    android:fitsSystemWindows="true"
-    tools:context=".SettingsActivity">
-
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:layout_marginStart="-16dp"
-        android:layout_marginEnd="-16dp"
-        android:background="?attr/colorPrimary"
-        android:elevation="4dp"
-        style="@style/App.Toolbar">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Settings"
-            android:layout_gravity="center"
-            android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Title"
-            android:textColor="?attr/colorOnPrimary" />
-    </com.google.android.material.appbar.MaterialToolbar>
+    android:background="?android:attr/colorBackground">
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:padding="16dp">
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="16dp">
+            android:orientation="vertical"
+            android:paddingBottom="32dp">
 
+            <!-- NETWORK & CONNECTION -->
             <TextView
-                android:id="@+id/tvTargetLabel"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Host Network"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="@id/spnConnectionTarget"
-                app:layout_constraintBottom_toBottomOf="@id/spnConnectionTarget" />
+                android:text="Connection Target"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <Spinner
                 android:id="@+id/spnConnectionTarget"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toEndOf="@id/tvTargetLabel"
-                app:layout_constraintTop_toTopOf="parent" />
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- CAMERA HARDWARE CONTROLS -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Exposure Low (ns)"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <EditText
+                    android:id="@+id/etExposureLow"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:inputType="number" />
+
+                <TextView
+                    android:id="@+id/tvExposureLowSeconds"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="(0.0s)" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/tvExposureLowLabel"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Exposure Low"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/spnConnectionTarget" />
+                android:text="Exposure High (ns)"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
 
-            <EditText
-                android:id="@+id/etExposureLow"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:ems="5"
-                android:inputType="number"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureLowLabel"
-                app:layout_constraintStart_toEndOf="@id/tvExposureLowLabel" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <EditText
+                    android:id="@+id/etExposureHigh"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:inputType="number" />
+
+                <TextView
+                    android:id="@+id/tvExposureHighSeconds"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="(0.0s)" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/tvExposureLowSeconds"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="0.000 sec"
-                android:textColor="?android:attr/textColorSecondary"
-                app:layout_constraintBaseline_toBaselineOf="@id/etExposureLow"
-                app:layout_constraintStart_toEndOf="@id/etExposureLow" />
-
-            <TextView
-                android:id="@+id/tvExposureHighLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Exposure High"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/etExposureLow" />
-
-            <EditText
-                android:id="@+id/etExposureHigh"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:ems="5"
-                android:inputType="number"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvExposureHighLabel"
-                app:layout_constraintStart_toEndOf="@id/tvExposureHighLabel" />
-            
-            <TextView
-                android:id="@+id/tvExposureHighSeconds"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="0.000 sec"
-                android:textColor="?android:attr/textColorSecondary"
-                app:layout_constraintBaseline_toBaselineOf="@id/etExposureHigh"
-                app:layout_constraintStart_toEndOf="@id/etExposureHigh" />
-
-            <!-- Gain -->
-            <TextView
-                android:id="@+id/tvGainLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Gain"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/etExposureHigh" />
+                android:text="Analog Gain"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <EditText
                 android:id="@+id/etGain"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:ems="4"
                 android:inputType="numberDecimal"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvGainLabel"
-                app:layout_constraintStart_toEndOf="@id/tvGainLabel" />
+                android:layout_marginBottom="8dp" />
 
             <TextView
-                android:id="@+id/tvDigitalGainLabel"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
                 android:text="Digital Gain"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvGainLabel"
-                app:layout_constraintStart_toEndOf="@id/etGain" />
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <EditText
                 android:id="@+id/etDigitalGain"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:ems="4"
                 android:inputType="numberDecimal"
-                app:layout_constraintBaseline_toBaselineOf="@id/tvDigitalGainLabel"
-                app:layout_constraintStart_toEndOf="@id/tvDigitalGainLabel" />
+                android:layout_marginBottom="8dp" />
 
             <TextView
                 android:id="@+id/tvExpCompLabel"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Exp Comp: +0.00"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/etGain" />
+                android:text="Exposure Compensation: 0.0"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <SeekBar
                 android:id="@+id/sbExpComp"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
                 android:max="16"
                 android:progress="8"
-                app:layout_constraintBottom_toBottomOf="@id/tvExpCompLabel"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toEndOf="@id/tvExpCompLabel"
-                app:layout_constraintTop_toTopOf="@id/tvExpCompLabel" />
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp" />
 
+            <!-- COMPACTED CHECKBOXES (Hardware & Feedback) -->
             <CheckBox
                 android:id="@+id/cbAeLock"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="AE Lock"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvExpCompLabel" />
+                android:minHeight="32dp"
+                android:layout_marginTop="8dp"
+                android:text="Auto Exposure Lock" />
 
             <CheckBox
                 android:id="@+id/cbAwbLock"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
-                android:text="AWB Lock"
-                app:layout_constraintStart_toEndOf="@id/cbAeLock"
-                app:layout_constraintTop_toTopOf="@id/cbAeLock" />
+                android:minHeight="32dp"
+                android:text="Auto White Balance Lock" />
 
             <CheckBox
                 android:id="@+id/cbVoiceCalls"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Voice line calls (Serve Practice)"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbAeLock" />
+                android:minHeight="32dp"
+                android:text="Voice calls (Out, Fault, Let)" />
 
             <CheckBox
                 android:id="@+id/cbBeepIn"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Beep for 'In' call (Serve Practice)"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbVoiceCalls" />
+                android:minHeight="32dp"
+                android:text="Beep on 'In' serves" />
 
             <CheckBox
                 android:id="@+id/cbSpeakMph"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Speak serve MPH (Serve Practice)"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbBeepIn" />
+                android:minHeight="32dp"
+                android:text="Speak serve MPH (Serve Practice)" />
 
             <CheckBox
                 android:id="@+id/cbEnableLogging"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Enable Detailed Tracking Logs"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbSpeakMph" />
+                android:minHeight="32dp"
+                android:text="Enable Detailed Tracking Logs" />
 
+            <!-- ALGORITHMIC TUNING -->
+            <TextView
+                android:id="@+id/tvDetThreshLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Detection Pruning Threshold (0-100)"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <EditText
+                android:id="@+id/etDetThresh"
+                android:layout_width="120dp"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:layout_marginBottom="16dp" />
+
+            <!-- SYSTEM ACTIONS -->
             <Button
                 android:id="@+id/btnClearLogs"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
+                android:layout_gravity="start"
+                android:layout_marginTop="8dp"
                 android:paddingStart="0dp"
                 android:paddingEnd="0dp"
                 android:text="Clear Debug Logs"
                 android:textAllCaps="false"
-                android:textColor="?android:attr/textColorPrimary"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbEnableLogging" />
+                android:textColor="?android:attr/textColorPrimary" />
 
             <Button
                 android:id="@+id/btnShareLogs"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="start"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:text="Share Debug Logs"
                 android:textAllCaps="false"
-                android:textColor="?android:attr/textColorPrimary"
-                android:paddingStart="0dp"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/btnClearLogs" />
+                android:textColor="?android:attr/textColorPrimary" />
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
-
+        </LinearLayout>
     </ScrollView>
-</LinearLayout>
+  </LinearLayout>
+  

@@ -493,6 +493,7 @@ public class MainActivity extends AppCompatActivity {
             isTracking = true;
             updateTrackingButtons(true);
             tvTrackingLog.setText("");
+            tvLiveTelemetry.setText(""); // Erase 1s stats line at startup
             sendCommand(buildStartTrackingCommand(activeTennisMode));
         } else {
             isTracking = false;
@@ -597,6 +598,7 @@ public class MainActivity extends AppCompatActivity {
           .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
           .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
+          .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
           .append("\n");
         return sb.toString();
     }

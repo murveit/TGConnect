@@ -44,8 +44,6 @@ import java.io.IOException;
 import java.util.zip.GZIPOutputStream;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.android.material.appbar.MaterialToolbar;
-
 import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -65,6 +63,7 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_SPEAK_MPH = "speak_mph";
     // Represents the user preference to enable verbose algorithmic tracking logs on the server
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
+    public static final String KEY_DET_THRESH = "det_thresh";
 
     private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
@@ -77,6 +76,7 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText etExposureHigh;
     private EditText etGain;
     private EditText etDigitalGain;
+    private EditText etDetThresh;
     private SeekBar sbExpComp;
     private TextView tvExpCompLabel;
 
@@ -85,8 +85,6 @@ public class SettingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
 
-        MaterialToolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             getSupportActionBar().setTitle("");
@@ -110,38 +108,43 @@ public class SettingsActivity extends AppCompatActivity {
 
         etGain = findViewById(R.id.etGain);
         etDigitalGain = findViewById(R.id.etDigitalGain);
+        etDetThresh = findViewById(R.id.etDetThresh);
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
         Button btnClearLogs = findViewById(R.id.btnClearLogs);
-        btnClearLogs.setOnClickListener(v -> {
-            new androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Clear Logs")
-                    .setMessage("Are you sure you want to delete the debug log file? This cannot be undone.")
-                    .setPositiveButton("Clear", (dialog, which) -> {
-                        clearLogs();
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        });
+        if (btnClearLogs != null) {
+            btnClearLogs.setOnClickListener(v -> {
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Clear Logs")
+                        .setMessage("Are you sure you want to delete the debug log file? This cannot be undone.")
+                        .setPositiveButton("Clear", (dialog, which) -> {
+                            clearLogs();
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            });
+        }
 
         Button btnShareLogs = findViewById(R.id.btnShareLogs);
-        btnShareLogs.setOnClickListener(v -> shareLogFile());
+        if (btnShareLogs != null) {
+            btnShareLogs.setOnClickListener(v -> shareLogFile());
+        }
 
-        // Create an ArrayAdapter using the string array and a default spinner layout
-        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
-                R.array.connection_options, android.R.layout.simple_spinner_item);
-        // Specify the layout to use when the list of choices appears
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        // Apply the adapter to the spinner
-        spnConnectionTarget.setAdapter(adapter);
+        if (spnConnectionTarget != null) {
+            ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
+                    R.array.connection_options, android.R.layout.simple_spinner_item);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spnConnectionTarget.setAdapter(adapter);
+        }
 
-        // 4. Load saved values when the activity starts
         loadSettings();
         setupSeekBarListeners();
     }
 
     private void setupNanoToSecondsWatcher(EditText editText, TextView outputTextView) {
+        if (editText == null || outputTextView == null) return;
+        
         editText.addTextChangedListener(new android.text.TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -173,68 +176,101 @@ public class SettingsActivity extends AppCompatActivity {
     private void loadSettings() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        String savedTarget = prefs.getString(KEY_CONNECTION_TARGET, "Chico");
-        ArrayAdapter<CharSequence> adapter = (ArrayAdapter<CharSequence>) spnConnectionTarget.getAdapter();
-        if (adapter != null) {
-            int position = adapter.getPosition(savedTarget);
-            spnConnectionTarget.setSelection(position >= 0 ? position : 0);
+        if (spnConnectionTarget != null) {
+            String savedTarget = prefs.getString(KEY_CONNECTION_TARGET, "Chico");
+            ArrayAdapter<CharSequence> adapter = (ArrayAdapter<CharSequence>) spnConnectionTarget.getAdapter();
+            if (adapter != null) {
+                int position = adapter.getPosition(savedTarget);
+                spnConnectionTarget.setSelection(position >= 0 ? position : 0);
+            }
         }
-        cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
-        cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
-        cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
-        cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
-        cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
-        cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
+        
+        if (cbAeLock != null) cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
+        if (cbAwbLock != null) cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
+        if (cbVoiceCalls != null) cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
+        if (cbBeepIn != null) cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
+        if (cbSpeakMph != null) cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
+        if (cbEnableLogging != null) cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
 
-        etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
-        etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
-        etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
-        etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
+        if (etExposureLow != null) etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
+        if (etExposureHigh != null) etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
+        if (etGain != null) etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
+        if (etDigitalGain != null) etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
+        if (etDetThresh != null) etDetThresh.setText(String.valueOf(prefs.getInt(KEY_DET_THRESH, 50)));
 
-        int expCompProgress = prefs.getInt(KEY_EXP_COMP_PROGRESS, 8);
-        sbExpComp.setProgress(expCompProgress);
-        float expCompValue = (expCompProgress - 8) * 0.25f;
-        tvExpCompLabel.setText(String.format(Locale.US, "Exp Comp: %+1.2f", expCompValue));
+        if (sbExpComp != null && tvExpCompLabel != null) {
+            int expCompProgress = prefs.getInt(KEY_EXP_COMP_PROGRESS, 8);
+            sbExpComp.setProgress(expCompProgress);
+            float expCompValue = (expCompProgress - 8) * 0.25f;
+            tvExpCompLabel.setText(String.format(Locale.US, "Exp Comp: %+1.2f", expCompValue));
+        }
     }
 
     private void saveSettings() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         SharedPreferences.Editor editor = prefs.edit();
 
-        editor.putString(KEY_CONNECTION_TARGET, spnConnectionTarget.getSelectedItem().toString());
-        editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
-        editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
-        editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
-        editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
-        editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
-        editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
+        if (spnConnectionTarget != null && spnConnectionTarget.getSelectedItem() != null) {
+            editor.putString(KEY_CONNECTION_TARGET, spnConnectionTarget.getSelectedItem().toString());
+        }
+        if (cbAeLock != null) editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
+        if (cbAwbLock != null) editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
+        if (cbVoiceCalls != null) editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
+        if (cbBeepIn != null) editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
+        if (cbSpeakMph != null) editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
+        if (cbEnableLogging != null) editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
 
-        try {
-            editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));
-        } catch (NumberFormatException e) {
-            editor.putLong(KEY_EXPOSURE_LOW, 10000L);
+        if (etExposureLow != null) {
+            try {
+                editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));
+            } catch (NumberFormatException e) {
+                editor.putLong(KEY_EXPOSURE_LOW, 10000L);
+            }
         }
-        try {
-            editor.putLong(KEY_EXPOSURE_HIGH, Long.parseLong(etExposureHigh.getText().toString()));
-        } catch (NumberFormatException e) {
-            editor.putLong(KEY_EXPOSURE_HIGH, 10000L);
+        
+        if (etExposureHigh != null) {
+            try {
+                editor.putLong(KEY_EXPOSURE_HIGH, Long.parseLong(etExposureHigh.getText().toString()));
+            } catch (NumberFormatException e) {
+                editor.putLong(KEY_EXPOSURE_HIGH, 10000L);
+            }
         }
-        try {
-            editor.putFloat(KEY_GAIN, Float.parseFloat(etGain.getText().toString()));
-        } catch (NumberFormatException e) {
-            editor.putFloat(KEY_GAIN, 1.0f);
+        
+        if (etGain != null) {
+            try {
+                editor.putFloat(KEY_GAIN, Float.parseFloat(etGain.getText().toString()));
+            } catch (NumberFormatException e) {
+                editor.putFloat(KEY_GAIN, 1.0f);
+            }
         }
-        try {
-            editor.putFloat(KEY_DIGITAL_GAIN, Float.parseFloat(etDigitalGain.getText().toString()));
-        } catch (NumberFormatException e) {
-            editor.putFloat(KEY_DIGITAL_GAIN, 1.0f);
+        
+        if (etDigitalGain != null) {
+            try {
+                editor.putFloat(KEY_DIGITAL_GAIN, Float.parseFloat(etDigitalGain.getText().toString()));
+            } catch (NumberFormatException e) {
+                editor.putFloat(KEY_DIGITAL_GAIN, 1.0f);
+            }
         }
 
-        editor.putInt(KEY_EXP_COMP_PROGRESS, sbExpComp.getProgress());
+        if (etDetThresh != null) {
+            try {
+                int thresh = Integer.parseInt(etDetThresh.getText().toString());
+                editor.putInt(KEY_DET_THRESH, Math.max(0, Math.min(100, thresh)));
+            } catch (NumberFormatException e) {
+                editor.putInt(KEY_DET_THRESH, 50);
+            }
+        }
+
+        if (sbExpComp != null) {
+            editor.putInt(KEY_EXP_COMP_PROGRESS, sbExpComp.getProgress());
+        }
+        
         editor.apply();
     }
 
     private void setupSeekBarListeners() {
+        if (sbExpComp == null || tvExpCompLabel == null) return;
+        
         sbExpComp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
