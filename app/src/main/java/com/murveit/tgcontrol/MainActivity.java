@@ -65,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     
     // --- Algorithmic Constants for TCP Commands ---
     private static final String CMD_SHUTDOWN_SYSTEM = "SHUTDOWN_SYSTEM\n";
+    private static final String CMD_REBOOT_SYSTEM = "REBOOT_SYSTEM\n";
+    private static final String CMD_RESTART_SERVICE = "RESTART_SERVICE\n";
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
     private static final String CMD_STOP_TRACKING = "STOP_TRACKING\n";
     private static final String CMD_GET_CALIBRATION_STATUS = "GET_CALIBRATION_STATUS\n";
@@ -93,6 +95,12 @@ public class MainActivity extends AppCompatActivity {
     private static final String TTS_TEXT_LET = "Let";
     // Cooldown duration in milliseconds before repeating "miles per hour"
     private static final long MPH_COOLDOWN_MS = 60000;
+
+    // --- Algorithmic Constants for Client-Side Histogram Calculation ---
+    // Determines how many rows/cols to skip during pixel extraction to preserve UI framerate
+    private static final int HISTOGRAM_PIXEL_STRIDE = 5;
+    // The standard number of luminance bins for an 8-bit image channel
+    private static final int HISTOGRAM_COLOR_BINS = 256;
 
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
@@ -127,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvHomeMessage, tvStatusLine1, tvStatusLine2;
     private Button btnGoRawRecording, btnGoTennis, btnStartRecording, btnCapturePhotos, btnStartTracking;
     private ImageView ivImage1, ivImage2, ivCheckLeft, ivCheckRight;
+    private HistogramView histView1, histView2;
     private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private CheckBox cbRecordSession;
@@ -194,6 +203,8 @@ public class MainActivity extends AppCompatActivity {
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
         ivImage1 = findViewById(R.id.ivImage1);
         ivImage2 = findViewById(R.id.ivImage2);
+        histView1 = findViewById(R.id.histView1);
+        histView2 = findViewById(R.id.histView2);
         ivCheckLeft = findViewById(R.id.ivCheckLeft);
         ivCheckRight = findViewById(R.id.ivCheckRight);
         btnModeSingles = findViewById(R.id.btnModeSingles);
@@ -209,8 +220,18 @@ public class MainActivity extends AppCompatActivity {
         tvLiveTelemetry = findViewById(R.id.tvLiveTelemetry);
         cbRecordSession = findViewById(R.id.cbRecordSession);
         
+        // Toggle Histograms on Image Click
+        ivImage1.setOnClickListener(v -> toggleHistogram(histView1));
+        ivImage2.setOnClickListener(v -> toggleHistogram(histView2));
+        
         // Force evaluation to ensure buttons are correctly disabled by default on startup
         updateTennisModeButtonsState();
+    }
+
+    private void toggleHistogram(HistogramView histView) {
+        if (histView != null) {
+            histView.setVisibility(histView.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void setupListeners() {
@@ -381,8 +402,40 @@ public class MainActivity extends AppCompatActivity {
 
         CommunicationService.getImageData().observe(this, imagePair -> {
             if (imagePair != null) {
-                ImageView targetView = "image1".equals(imagePair.second) ? ivImage1 : ivImage2;
-                if (targetView != null) targetView.setImageBitmap(imagePair.first);
+                boolean isLeft = "image1".equals(imagePair.second);
+                ImageView targetView = isLeft ? ivImage1 : ivImage2;
+                HistogramView targetHist = isLeft ? histView1 : histView2;
+
+                if (targetView != null) {
+                    android.graphics.Bitmap bmp = imagePair.first;
+                    targetView.setImageBitmap(bmp);
+                    
+                    // Asynchronously calculate the histogram without blocking the main UI thread
+                    new Thread(() -> {
+                        int[] hist = new int[HISTOGRAM_COLOR_BINS];
+                        int width = bmp.getWidth();
+                        int height = bmp.getHeight();
+                        int totalSampled = 0;
+
+                        // Fast subsampling logic
+                        for (int y = 0; y < height; y += HISTOGRAM_PIXEL_STRIDE) {
+                            for (int x = 0; x < width; x += HISTOGRAM_PIXEL_STRIDE) {
+                                int pixel = bmp.getPixel(x, y);
+                                // Extract Green channel as a fast approximation of perceptual luminance
+                                int g = (pixel >> 8) & 0xFF;
+                                hist[g]++;
+                                totalSampled++;
+                            }
+                        }
+
+                        int finalTotal = totalSampled;
+                        mainHandler.post(() -> {
+                            if (targetHist != null) {
+                                targetHist.setHistogramData(hist, finalTotal);
+                            }
+                        });
+                    }).start();
+                }
             }
         });
     }
@@ -492,10 +545,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showPowerOffDialog() {
-        new AlertDialog.Builder(this).setTitle("Shut Down?").setPositiveButton("Yes", (d, w) -> {
-            sendCommand(CMD_SHUTDOWN_SYSTEM);
-            mainHandler.postDelayed(this::disconnectFromServer, 500);
-        }).setNegativeButton("Cancel", null).show();
+        String[] options = {"Power Down", "Reboot", "Restart Service", "Cancel"};
+        new AlertDialog.Builder(this)
+                .setTitle("Server Power Options")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        sendCommand(CMD_SHUTDOWN_SYSTEM);
+                        mainHandler.postDelayed(this::disconnectFromServer, 500);
+                    } else if (which == 1) {
+                        sendCommand(CMD_REBOOT_SYSTEM);
+                        mainHandler.postDelayed(this::disconnectFromServer, 500);
+                    } else if (which == 2) {
+                        sendCommand(CMD_RESTART_SERVICE);
+                        mainHandler.postDelayed(this::disconnectFromServer, 500);
+                    }
+                })
+                .show();
     }
 
     private void connectToServer() {
@@ -531,6 +596,7 @@ public class MainActivity extends AppCompatActivity {
           .append(",exposureHigh=").append(prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L))
           .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
+          .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
           .append("\n");
         return sb.toString();
     }

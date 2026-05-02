@@ -239,7 +239,21 @@ public class CalibrationActivity extends AppCompatActivity {
         ivCalibrationImage.setImageBitmap(null);
         advanceState(STATE_LOADING);
         
-        sendCommand("START_CALIBRATION:" + sensorId + "," + TCP_SCALE_FACTOR);
+        sendCommand("START_CALIBRATION:" + sensorId + "," + TCP_SCALE_FACTOR + "," + getSettingsPayload());
+    }
+
+    private String getSettingsPayload() {
+        android.content.SharedPreferences prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        float expComp = (prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8) - 8) * 0.25f;
+        StringBuilder sb = new StringBuilder();
+        sb.append("exp_comp=").append(expComp)
+          .append(",gain=").append(prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f))
+          .append(",digital_gain=").append(prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f))
+          .append(",exposureLow=").append(prefs.getLong(SettingsActivity.KEY_EXPOSURE_LOW, 33333L))
+          .append(",exposureHigh=").append(prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L))
+          .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
+          .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0);
+        return sb.toString();
     }
 
     private void handleConfirmAction() {

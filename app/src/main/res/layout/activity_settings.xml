@@ -218,6 +218,15 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/cbBeepIn" />
 
+            <CheckBox
+                android:id="@+id/cbEnableLogging"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Enable Detailed Tracking Logs"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/cbSpeakMph" />
+
             <Button
                 android:id="@+id/btnClearLogs"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
@@ -230,7 +239,7 @@
                 android:textAllCaps="false"
                 android:textColor="?android:attr/textColorPrimary"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/cbSpeakMph" />
+                app:layout_constraintTop_toBottomOf="@id/cbEnableLogging" />
 
             <Button
                 android:id="@+id/btnShareLogs"

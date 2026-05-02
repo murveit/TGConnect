@@ -63,6 +63,8 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_VOICE_CALLS = "voice_calls";
     public static final String KEY_BEEP_IN = "beep_in";
     public static final String KEY_SPEAK_MPH = "speak_mph";
+    // Represents the user preference to enable verbose algorithmic tracking logs on the server
+    public static final String KEY_ENABLE_LOGGING = "enable_logging";
 
     private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
@@ -70,6 +72,7 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbVoiceCalls;
     private CheckBox cbBeepIn;
     private CheckBox cbSpeakMph;
+    private CheckBox cbEnableLogging;
     private EditText etExposureLow;
     private EditText etExposureHigh;
     private EditText etGain;
@@ -95,6 +98,7 @@ public class SettingsActivity extends AppCompatActivity {
         cbVoiceCalls = findViewById(R.id.cbVoiceCalls);
         cbBeepIn = findViewById(R.id.cbBeepIn);
         cbSpeakMph = findViewById(R.id.cbSpeakMph);
+        cbEnableLogging = findViewById(R.id.cbEnableLogging);
 
         etExposureLow = findViewById(R.id.etExposureLow);
         TextView tvExposureLowSeconds = findViewById(R.id.tvExposureLowSeconds);
@@ -180,6 +184,7 @@ public class SettingsActivity extends AppCompatActivity {
         cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
         cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
         cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
+        cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
 
         etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
         etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
@@ -202,6 +207,7 @@ public class SettingsActivity extends AppCompatActivity {
         editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
         editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
         editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
+        editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
 
         try {
             editor.putLong(KEY_EXPOSURE_LOW, Long.parseLong(etExposureLow.getText().toString()));

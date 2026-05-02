@@ -179,23 +179,45 @@
                     android:layout_weight="1"
                     android:orientation="vertical">
 
-                    <ImageView
-                        android:id="@+id/ivImage1"
+                    <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="0dp"
                         android:layout_weight="1"
-                        android:background="#CCCCCC"
-                        android:scaleType="fitCenter"
-                        android:layout_marginBottom="4dp" />
+                        android:layout_marginBottom="4dp">
 
-                    <ImageView
-                        android:id="@+id/ivImage2"
+                        <ImageView
+                            android:id="@+id/ivImage1"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="#CCCCCC"
+                            android:scaleType="fitCenter" />
+
+                        <com.murveit.tgcontrol.HistogramView
+                            android:id="@+id/histView1"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:visibility="gone" />
+                    </FrameLayout>
+
+                    <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="0dp"
                         android:layout_weight="1"
-                        android:background="#CCCCCC"
-                        android:scaleType="fitCenter"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="4dp">
+
+                        <ImageView
+                            android:id="@+id/ivImage2"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="#CCCCCC"
+                            android:scaleType="fitCenter" />
+
+                        <com.murveit.tgcontrol.HistogramView
+                            android:id="@+id/histView2"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:visibility="gone" />
+                    </FrameLayout>
                 </LinearLayout>
             </LinearLayout>
 
