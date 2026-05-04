@@ -4,6 +4,7 @@
  *
  * 1. INITIALIZATION:
  * - Establishes a scrolling vertical list architecture to safely accommodate all system preferences.
+ * - Wraps the hierarchy with an AppBarLayout to instantiate the navigation toolbar.
  *
  * 2. CALLING PROCEDURE:
  * - Inflated by SettingsActivity.java when the user opens the settings menu.
@@ -13,16 +14,46 @@
  * flow sequentially and mathematically prevents the Z-axis overlapping issues common in 
  * broken ConstraintLayout chains.
  * - Compaction: Checkbox minHeight and vertical margins are minimized to reduce white space.
- * - Grouping: Related hardware, algorithmic, and audio feedback elements are clustered.
+ * - Alignment: Uses nested horizontal LinearLayouts to pair labels with their corresponding 
+ * input widgets (Gain, Exp Comp, Pruning) on a single visual line.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Defines the visual hierarchy and widget IDs bound during SettingsActivity initialization.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
+    android:fitsSystemWindows="true"
     android:background="?android:attr/colorBackground">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="32dp"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorPrimary"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:popupTheme="@style/ThemeOverlay.AppCompat.Light">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Settings"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
+                
+        </com.google.android.material.appbar.MaterialToolbar>
+
+    </com.google.android.material.appbar.AppBarLayout>
 
     <ScrollView
         android:layout_width="match_parent"
@@ -34,43 +65,53 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
+            android:paddingTop="16dp"
             android:paddingBottom="32dp">
 
             <!-- NETWORK & CONNECTION -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Connection Target"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <Spinner
-                android:id="@+id/spnConnectionTarget"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="16dp" />
-
-            <!-- CAMERA HARDWARE CONTROLS -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Exposure Low (ns)"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Connection Target:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
+
+                <Spinner
+                    android:id="@+id/spnConnectionTarget"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp" />
+            </LinearLayout>
+
+            <!-- CAMERA HARDWARE CONTROLS -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Exp Low:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
 
                 <EditText
                     android:id="@+id/etExposureLow"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:layout_marginStart="16dp"
                     android:inputType="number" />
 
                 <TextView
@@ -81,25 +122,26 @@
                     android:text="(0.0s)" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Exposure High (ns)"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Exp High:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
 
                 <EditText
                     android:id="@+id/etExposureHigh"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:layout_marginStart="16dp"
                     android:inputType="number" />
 
                 <TextView
@@ -110,50 +152,79 @@
                     android:text="(0.0s)" />
             </LinearLayout>
 
-            <TextView
+            <!-- Inline Analog Gain -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Analog Gain"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+                
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Analog gain:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
+                    
+                <EditText
+                    android:id="@+id/etGain"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:inputType="numberDecimal" />
+            </LinearLayout>
 
-            <EditText
-                android:id="@+id/etGain"
+            <!-- Inline Digital Gain -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="numberDecimal"
-                android:layout_marginBottom="8dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+                
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Digital gain:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
+                    
+                <EditText
+                    android:id="@+id/etDigitalGain"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:inputType="numberDecimal" />
+            </LinearLayout>
 
-            <TextView
+            <!-- Inline Exposure Compensation -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Digital Gain"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <EditText
-                android:id="@+id/etDigitalGain"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="numberDecimal"
-                android:layout_marginBottom="8dp" />
-
-            <TextView
-                android:id="@+id/tvExpCompLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Exposure Compensation: 0.0"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <SeekBar
-                android:id="@+id/sbExpComp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="16"
-                android:progress="8"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="16dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="16dp">
+                
+                <TextView
+                    android:id="@+id/tvExpCompLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Exp Comp: 0.0"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
+                    
+                <SeekBar
+                    android:id="@+id/sbExpComp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:max="16"
+                    android:progress="8" />
+            </LinearLayout>
 
             <!-- COMPACTED CHECKBOXES (Hardware & Feedback) -->
             <CheckBox
@@ -200,49 +271,58 @@
                 android:text="Enable Detailed Tracking Logs" />
 
             <!-- ALGORITHMIC TUNING -->
-            <TextView
-                android:id="@+id/tvDetThreshLabel"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:layout_marginTop="16dp"
-                android:text="Detection Pruning Threshold (0-100)"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <EditText
-                android:id="@+id/etDetThresh"
-                android:layout_width="120dp"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="16dp">
+                
+                <TextView
+                    android:id="@+id/tvDetThreshLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pruning:"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary" />
+                    
+                <EditText
+                    android:id="@+id/etDetThresh"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:inputType="number" />
+            </LinearLayout>
 
             <!-- SYSTEM ACTIONS -->
-            <Button
-                android:id="@+id/btnClearLogs"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_gravity="start"
-                android:layout_marginTop="8dp"
-                android:paddingStart="0dp"
-                android:paddingEnd="0dp"
-                android:text="Clear Debug Logs"
-                android:textAllCaps="false"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <Button
-                android:id="@+id/btnShareLogs"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start"
-                android:paddingStart="0dp"
-                android:paddingEnd="0dp"
-                android:text="Share Debug Logs"
-                android:textAllCaps="false"
-                android:textColor="?android:attr/textColorPrimary" />
+                android:orientation="horizontal"
+                android:gravity="center_horizontal"
+                android:layout_marginTop="16dp">
+                
+                <Button
+                    android:id="@+id/btnClearLogs"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Clear Logs"
+                    android:textAllCaps="false" />
+                    
+                <Space
+                    android:layout_width="16dp"
+                    android:layout_height="wrap_content" />
+                    
+                <Button
+                    android:id="@+id/btnShareLogs"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Share Logs"
+                    android:textAllCaps="false" />
+            </LinearLayout>
 
         </LinearLayout>
     </ScrollView>
-  </LinearLayout>
-  
+</LinearLayout>

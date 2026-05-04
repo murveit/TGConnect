@@ -22,6 +22,8 @@ package com.murveit.tgcontrol;
  * - Intercepts "CALIBRATION_SAVED" to instantly query and update UI when returning from CalibrationActivity.
  * - JSON Interception: Parses "TRACK_EVENT_JSON" and utilizes TextToSpeech to vocally call "Faults" 
  * or triggers a ToneGenerator "beep" for "In" balls during Serve Practice mode.
+ * - Error Handling: Intercepts hardware-level watchdog timeouts from the server and displays blocking 
+ * Alert Dialogs so the user knows exactly when a Jetson reboot is required.
  *
  * 3. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Visually disables (greys out) or enables Singles, Doubles, Serve, and Rally buttons in real-time.
@@ -387,6 +389,18 @@ public class MainActivity extends AppCompatActivity {
                     }, 500);
                 }
             } else if ("Error".equals(status) || (message != null && message.startsWith("Disconnected"))) {
+                
+                // --- WATCHDOG / HARDWARE ERROR INTERCEPTION ---
+                if (message != null && !message.isEmpty()) {
+                    // Use a blocking dialog for critical errors so the user cannot miss it
+                    new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Connection Dropped")
+                            .setMessage(message)
+                            .setPositiveButton("OK", null)
+                            .setCancelable(false)
+                            .show();
+                }
+
                 isConnected = false;
                 isRecording = false;
                 isTracking = false;

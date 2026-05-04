@@ -85,9 +85,11 @@ public class SettingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
 
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle("");
+        // Bind the toolbar explicitly using its full path to avoid import errors
+        // and set the navigation icon (the left arrow) to trigger the back action.
+        com.google.android.material.appbar.MaterialToolbar toolbar = findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            toolbar.setNavigationOnClickListener(v -> onBackPressed());
         }
 
         spnConnectionTarget = findViewById(R.id.spnConnectionTarget);
@@ -155,19 +157,19 @@ public class SettingsActivity extends AppCompatActivity {
             @Override
             public void afterTextChanged(android.text.Editable s) {
                 if (s == null || s.length() == 0) {
-                    outputTextView.setText("0.000 sec");
+                    outputTextView.setText("0.000 s");
                     return;
                 }
                 try {
                     long nanoseconds = Long.parseLong(s.toString());
                     double seconds = nanoseconds / 1_000_000_000.0;
                     if (seconds > 0 && seconds < 0.001) {
-                        outputTextView.setText(String.format(java.util.Locale.US, "%.6f sec", seconds));
+                        outputTextView.setText(String.format(java.util.Locale.US, "%.6f s", seconds));
                     } else {
-                        outputTextView.setText(String.format(java.util.Locale.US, "%.3f sec", seconds));
+                        outputTextView.setText(String.format(java.util.Locale.US, "%.3f s", seconds));
                     }
                 } catch (NumberFormatException e) {
-                    outputTextView.setText("- sec");
+                    outputTextView.setText("- s");
                 }
             }
         });
