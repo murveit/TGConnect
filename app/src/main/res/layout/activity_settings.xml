@@ -271,6 +271,14 @@
                 android:text="Enable Detailed Tracking Logs" />
 
             <!-- ALGORITHMIC TUNING -->
+                
+            <CheckBox
+                android:id="@+id/cbDebugCalibration"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="Use Debug Calibration Files (Bypass Timestamps)" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

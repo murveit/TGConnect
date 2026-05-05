@@ -71,7 +71,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String CMD_RESTART_SERVICE = "RESTART_SERVICE\n";
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
     private static final String CMD_STOP_TRACKING = "STOP_TRACKING\n";
-    private static final String CMD_GET_CALIBRATION_STATUS = "GET_CALIBRATION_STATUS\n";
+    
+    private static final String KEY_RECORD_SESSION = "record_session";
 
     // --- Algorithmic Constants for Protocol Parsing ---
     // Represents the string identifiers used by the server to identify camera arrays
@@ -172,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
             isConnected = true;
             switchState(STATE_TENNIS_MENU); // Put user right back on the menu
             // Wait slightly for UI to mount, then fetch fresh calibration checkmarks from Orin
-            mainHandler.postDelayed(() -> sendCommand(CMD_GET_CALIBRATION_STATUS), 250);
+            mainHandler.postDelayed(() -> sendCommand(buildGetCalibrationStatusCommand()), 250);
         } else {
             switchState(STATE_DISCONNECTED);
         }
@@ -221,6 +222,14 @@ public class MainActivity extends AppCompatActivity {
         tvSelectPlayMode = findViewById(R.id.tvSelectPlayMode);
         tvLiveTelemetry = findViewById(R.id.tvLiveTelemetry);
         cbRecordSession = findViewById(R.id.cbRecordSession);
+        
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (cbRecordSession != null) {
+            cbRecordSession.setChecked(prefs.getBoolean(KEY_RECORD_SESSION, false));
+            cbRecordSession.setOnCheckedChangeListener((btn, isChecked) -> {
+                prefs.edit().putBoolean(KEY_RECORD_SESSION, isChecked).apply();
+            });
+        }
         
         // Toggle Histograms on Image Click
         ivImage1.setOnClickListener(v -> toggleHistogram(histView1));
@@ -374,7 +383,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if ("CALIBRATION_SAVED".equals(message)) {
-                sendCommand(CMD_GET_CALIBRATION_STATUS);
+                sendCommand(buildGetCalibrationStatusCommand());
             }
 
             updateUIStatus(status, message);
@@ -385,16 +394,17 @@ public class MainActivity extends AppCompatActivity {
                     switchState(STATE_HOME);
                     mainHandler.postDelayed(() -> {
                         sendCommand(buildSetTimeCommand());
-                        sendCommand(CMD_GET_CALIBRATION_STATUS);
+                        sendCommand(buildGetCalibrationStatusCommand());
                     }, 500);
                 }
             } else if ("Error".equals(status) || (message != null && message.startsWith("Disconnected"))) {
                 
                 // --- WATCHDOG / HARDWARE ERROR INTERCEPTION ---
-                if (message != null && !message.isEmpty()) {
+                // ONLY trigger the blocking dialog for true system errors, ignoring routine disconnects
+                if ("Error".equals(status) && message != null && !message.isEmpty()) {
                     // Use a blocking dialog for critical errors so the user cannot miss it
                     new AlertDialog.Builder(MainActivity.this)
-                            .setTitle("Connection Dropped")
+                            .setTitle("Hardware Error")
                             .setMessage(message)
                             .setPositiveButton("OK", null)
                             .setCancelable(false)
@@ -613,8 +623,15 @@ public class MainActivity extends AppCompatActivity {
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
           .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
           .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
+          .append(",debug_calib=").append(prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false) ? 1 : 0)
           .append("\n");
         return sb.toString();
+    }
+
+    private String buildGetCalibrationStatusCommand() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean useDebug = prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false);
+        return "GET_CALIBRATION_STATUS:DEBUG=" + (useDebug ? "1" : "0") + "\n";
     }
 
     private String buildCaptureCommand() { return "CAPTURE_PHOTO:" + getSettingsPayload(false).replace("4K,JPEG,", "4K,JPEG,0.25,"); }

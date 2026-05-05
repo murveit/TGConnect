@@ -63,6 +63,8 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_SPEAK_MPH = "speak_mph";
     // Represents the user preference to enable verbose algorithmic tracking logs on the server
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
+    // Bypass the 12-hour TTL for offline or home testing
+    public static final String KEY_DEBUG_CALIBRATION = "debug_calibration";
     public static final String KEY_DET_THRESH = "det_thresh";
 
     private Spinner spnConnectionTarget;
@@ -72,6 +74,7 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbBeepIn;
     private CheckBox cbSpeakMph;
     private CheckBox cbEnableLogging;
+    private CheckBox cbDebugCalibration;
     private EditText etExposureLow;
     private EditText etExposureHigh;
     private EditText etGain;
@@ -99,6 +102,7 @@ public class SettingsActivity extends AppCompatActivity {
         cbBeepIn = findViewById(R.id.cbBeepIn);
         cbSpeakMph = findViewById(R.id.cbSpeakMph);
         cbEnableLogging = findViewById(R.id.cbEnableLogging);
+        cbDebugCalibration = findViewById(R.id.cbDebugCalibration);
 
         etExposureLow = findViewById(R.id.etExposureLow);
         TextView tvExposureLowSeconds = findViewById(R.id.tvExposureLowSeconds);
@@ -193,6 +197,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbBeepIn != null) cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
         if (cbSpeakMph != null) cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
         if (cbEnableLogging != null) cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
+        if (cbDebugCalibration != null) cbDebugCalibration.setChecked(prefs.getBoolean(KEY_DEBUG_CALIBRATION, false));
 
         if (etExposureLow != null) etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
         if (etExposureHigh != null) etExposureHigh.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_HIGH, 10000L)));
@@ -221,6 +226,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbBeepIn != null) editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
         if (cbSpeakMph != null) editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
         if (cbEnableLogging != null) editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
+        if (cbDebugCalibration != null) editor.putBoolean(KEY_DEBUG_CALIBRATION, cbDebugCalibration.isChecked());
 
         if (etExposureLow != null) {
             try {
