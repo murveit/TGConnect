@@ -200,7 +200,7 @@ public class CalibrationActivity extends AppCompatActivity {
         CommunicationService.getStatusData().observe(this, pair -> {
             if (pair == null) return;
             if ("CALIBRATION_SAVED".equals(pair.second)) {
-                Toast.makeText(this, "Matrix Locked to Hardware.", Toast.LENGTH_SHORT).show();
+                // Toast.makeText(this, "Matrix Locked to Hardware.", Toast.LENGTH_SHORT).show();
                 finish();
             } else if (pair.second != null && pair.second.contains("ABORTED")) {
                 Toast.makeText(this, "Server Error: " + pair.second, Toast.LENGTH_LONG).show();

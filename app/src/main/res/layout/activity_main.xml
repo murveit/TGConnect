@@ -61,6 +61,17 @@
                 android:layout_weight="1" />
 
             <ImageButton
+                android:id="@+id/btnDebugAudio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Debug Audio"
+                android:src="@android:drawable/ic_lock_silent_mode_off"
+                app:tint="?attr/colorOnSurface"
+                android:visibility="gone" />
+
+            <ImageButton
                 android:id="@+id/btnSettings"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

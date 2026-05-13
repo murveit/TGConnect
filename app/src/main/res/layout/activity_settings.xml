@@ -277,7 +277,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="32dp"
-                android:text="Use Debug Calibration Files (Bypass Timestamps)" />
+                android:text="Use Debug Calibration Files" />
+
+            <CheckBox
+                android:id="@+id/cbDebugAudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="Debug Audio" />
 
             <LinearLayout
                 android:layout_width="match_parent"

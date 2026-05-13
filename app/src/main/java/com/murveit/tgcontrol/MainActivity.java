@@ -133,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
     private long lastSpokenMphTimeMs = 0;
 
     private Button btnBack, btnConnect;
-    private ImageButton btnPowerOff, btnSettings;
+    private ImageButton btnPowerOff, btnSettings, btnDebugAudio;
     private LinearLayout llHome, llHomeButtons, llRawRecording, llTennisMenu, llActiveTennis;
     private TextView tvHomeMessage, tvStatusLine1, tvStatusLine2;
     private Button btnGoRawRecording, btnGoTennis, btnStartRecording, btnCapturePhotos, btnStartTracking;
@@ -146,6 +146,7 @@ public class MainActivity extends AppCompatActivity {
     // Hardware Audio Engines
     private TextToSpeech textToSpeech;
     private ToneGenerator toneGenerator;
+    private FastSpeechEngine fastSpeechEngine;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -155,10 +156,13 @@ public class MainActivity extends AppCompatActivity {
         mainHandler = new Handler(Looper.getMainLooper());
         
         // Initialize Audio Engines
-        toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, BEEP_VOLUME_MAX);
         textToSpeech = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech.setLanguage(Locale.US);
+
+                // Initialize the fast speech engine cache
+                fastSpeechEngine = new FastSpeechEngine(MainActivity.this, textToSpeech);
+                fastSpeechEngine.initializeCache();
             }
         });
         
@@ -192,6 +196,7 @@ public class MainActivity extends AppCompatActivity {
         btnConnect = findViewById(R.id.btnConnect);
         btnPowerOff = findViewById(R.id.btnPowerOff);
         btnSettings = findViewById(R.id.btnSettings);
+        btnDebugAudio = findViewById(R.id.btnDebugAudio);
         llHome = findViewById(R.id.llHome);
         llHomeButtons = findViewById(R.id.llHomeButtons);
         llRawRecording = findViewById(R.id.llRawRecording);
@@ -252,6 +257,31 @@ public class MainActivity extends AppCompatActivity {
         });
         btnPowerOff.setOnClickListener(v -> showPowerOffDialog());
         btnSettings.setOnClickListener(v -> startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
+        
+        if (btnDebugAudio != null) {
+            btnDebugAudio.setOnClickListener(v -> {
+                int randomMph = 30 + (int)(Math.random() * 61); // 30 to 90 mph
+                double randX = (Math.random() * 8) - 4;
+                double randY = (Math.random() * 10) - 5;
+                
+                double r = Math.random();
+                String call;
+                if (r < 0.6) {
+                    call = "In";
+                } else if (r < 0.9) {
+                    call = MODE_SERVE_PRACTICE.equals(activeTennisMode) ? "Fault" : "Out";
+                } else {
+                    call = MODE_SERVE_PRACTICE.equals(activeTennisMode) ? "Let" : "In";
+                }
+
+                String fakeJson = String.format(Locale.US,
+                        "{\"wall_clock\": \"Debug\", \"strike_type\": \"Hit\", \"call_str\": \"%s\", \"speed_mph\": %d.0, \"strike_x\": 0.0, \"strike_y\": 11.0, \"bounce_x\": %.1f, \"bounce_y\": %.1f}",
+                        call, randomMph, randX, randY);
+
+                processTrackEventJson(fakeJson);
+            });
+        }
+        
         btnBack.setOnClickListener(v -> onBackPressed());
         btnGoRawRecording.setOnClickListener(v -> switchState(STATE_RAW_RECORDING));
         btnGoTennis.setOnClickListener(v -> switchState(STATE_TENNIS_MENU));
@@ -274,6 +304,12 @@ public class MainActivity extends AppCompatActivity {
             llTennisMenu.setVisibility(View.GONE);
             llActiveTennis.setVisibility(View.GONE);
             btnBack.setVisibility((newState == STATE_DISCONNECTED || newState == STATE_HOME) ? View.GONE : View.VISIBLE);
+
+            if (btnDebugAudio != null) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
+                boolean showDebug = prefs.getBoolean(SettingsActivity.KEY_DEBUG_AUDIO, false);
+                btnDebugAudio.setVisibility((newState == STATE_ACTIVE_TENNIS && showDebug) ? View.VISIBLE : View.GONE);
+            }
 
             if (newState == STATE_DISCONNECTED) {
                 llHome.setVisibility(View.VISIBLE);
@@ -307,68 +343,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if ("TRACK_EVENT_JSON".equals(status)) {
-                try {
-                    org.json.JSONObject json = new org.json.JSONObject(message);
-                    String wallClock = json.optString("wall_clock", "");
-                    String strikeType = json.optString("strike_type", "Hit");
-                    String callStr = json.optString("call_str", "Unknown");
-                    double mph = json.optDouble("speed_mph", 0.0);
-                    double sX = json.optDouble("strike_x", 0.0);
-                    double sY = json.optDouble("strike_y", 0.0);
-                    double bX = json.optDouble("bounce_x", 0.0);
-                    double bY = json.optDouble("bounce_y", 0.0);
-                    
-                    if (strikeType.length() > 0) {
-                        strikeType = strikeType.substring(0, 1).toUpperCase() + strikeType.substring(1);
-                    }
-                    
-                    String timePrefix = wallClock.isEmpty() ? "" : wallClock + " ";
-
-                    // Customize by mode? Check if mph exists? Plot?
-                    String formatted = String.format(Locale.US, "%s%s. %s. %.0fmph", 
-                                                     timePrefix, strikeType, callStr, mph);
-                    appendToTrackingLog(formatted);
-                    
-                    // --- AUDIO FEEDBACK FOR SERVE PRACTICE ---
-                    if (MODE_SERVE_PRACTICE.equals(activeTennisMode)) {
-                        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
-                        boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
-                        boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
-                        boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
-
-                        int mphInt = (int) Math.round(mph);
-                        
-                        String ttsMphStr;
-                        long currentTime = System.currentTimeMillis();
-                        if (currentTime - lastSpokenMphTimeMs > MPH_COOLDOWN_MS) {
-                            ttsMphStr = mphInt + " miles per hour";
-                            lastSpokenMphTimeMs = currentTime;
-                        } else {
-                            ttsMphStr = String.valueOf(mphInt);
-                        }
-
-                        if ("In".equalsIgnoreCase(callStr)) {
-                            if (speakMph && textToSpeech != null) {
-                                textToSpeech.speak(ttsMphStr, TextToSpeech.QUEUE_FLUSH, null, null);
-                            } else if (playBeep && toneGenerator != null) {
-                                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
-                            }
-                        } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
-                            if (playVoice && textToSpeech != null) {
-                                String text = speakMph ? TTS_TEXT_FAULT + ", " + ttsMphStr : TTS_TEXT_FAULT;
-                                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-                            }
-                        } else if ("Let".equalsIgnoreCase(callStr)) {
-                            if (playVoice && textToSpeech != null) {
-                                String text = speakMph ? TTS_TEXT_LET + ", " + ttsMphStr : TTS_TEXT_LET;
-                                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-                            }
-                        }
-                    }
-
-                } catch (Exception e) {
-                    FileLogger.log(this, "JSON Parse Error", e);
-                }
+                processTrackEventJson(message);
                 return;
             }
 
@@ -462,6 +437,69 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private void processTrackEventJson(String message) {
+        try {
+            org.json.JSONObject json = new org.json.JSONObject(message);
+            String wallClock = json.optString("wall_clock", "");
+            String strikeType = json.optString("strike_type", "Hit");
+            String callStr = json.optString("call_str", "Unknown");
+            double mph = json.optDouble("speed_mph", 0.0);
+            double sX = json.optDouble("strike_x", 0.0);
+            double sY = json.optDouble("strike_y", 0.0);
+            double bX = json.optDouble("bounce_x", 0.0);
+            double bY = json.optDouble("bounce_y", 0.0);
+            
+            if (strikeType.length() > 0) {
+                strikeType = strikeType.substring(0, 1).toUpperCase() + strikeType.substring(1);
+            }
+            
+            String timePrefix = wallClock.isEmpty() ? "" : wallClock + " ";
+
+            // Customize by mode? Check if mph exists? Plot?
+            String formatted = String.format(Locale.US, "%s%s. %s. %.0fmph", 
+                                             timePrefix, strikeType, callStr, mph);
+            appendToTrackingLog(formatted);
+            
+            // --- AUDIO FEEDBACK FOR SERVE PRACTICE ---
+            if (MODE_SERVE_PRACTICE.equals(activeTennisMode)) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
+                boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+                boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
+                boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
+
+                if (fastSpeechEngine != null) {
+                    if ("In".equalsIgnoreCase(callStr)) {
+                        if (speakMph) {
+                            int mphInt = (int) Math.round(mph);
+                            String ttsMphStr;
+                            long currentTime = System.currentTimeMillis();
+                            if (currentTime - lastSpokenMphTimeMs > MPH_COOLDOWN_MS) {
+                                ttsMphStr = mphInt + " miles per hour";
+                                lastSpokenMphTimeMs = currentTime;
+                            } else {
+                                ttsMphStr = String.valueOf(mphInt);
+                            }
+                            fastSpeechEngine.speak(ttsMphStr);
+                        } else if (playBeep && toneGenerator != null) {
+                            toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
+                        }
+                    } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+                        if (playVoice) {
+                            fastSpeechEngine.speak(TTS_TEXT_FAULT);
+                        }
+                    } else if ("Let".equalsIgnoreCase(callStr)) {
+                        if (playVoice) {
+                            fastSpeechEngine.speak(TTS_TEXT_LET);
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            FileLogger.log(this, "JSON Parse Error", e);
+        }
     }
 
     private void handleCalibrationStatus(String data) {
@@ -663,7 +701,7 @@ public class MainActivity extends AppCompatActivity {
         else if ((currentState == STATE_RAW_RECORDING || currentState == STATE_TENNIS_MENU) && !isRecording) switchState(STATE_HOME);
         else super.onBackPressed();
     }
-    
+
     @Override
     protected void onDestroy() {
         if (textToSpeech != null) {
@@ -673,6 +711,9 @@ public class MainActivity extends AppCompatActivity {
         if (toneGenerator != null) {
             toneGenerator.release();
         }
+        if (fastSpeechEngine != null) {
+            fastSpeechEngine.shutdown();
+        }
         super.onDestroy();
-    }
+    }    
 }

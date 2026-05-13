@@ -373,9 +373,13 @@ public class CommunicationService extends Service {
                         // Because currentLineBuffer is now persistent, we don't lose fragmented streams.
                         continue;
                     } catch (IOException e) {
-                        FileLogger.log(CommunicationService.this, "IO Error: Connection likely dropped by Orin.", e);
-                        // Instead of just logging, trigger a full reset
-                        statusData.postValue(new Pair<>("Error", "Server dropped connection."));
+                        if (isRunning.get()) {
+                            FileLogger.log(CommunicationService.this, "IO Error: Connection likely dropped by Orin.", e);
+                            // Instead of just logging, trigger a full reset
+                            statusData.postValue(new Pair<>("Error", "Server dropped connection."));
+                        } else {
+                            FileLogger.log(CommunicationService.this, "IO Error: Socket closed intentionally during disconnect.");
+                        }
                         break;
                     }
                 }
