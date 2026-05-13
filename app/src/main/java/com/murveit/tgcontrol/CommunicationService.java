@@ -85,6 +85,10 @@ public class CommunicationService extends Service {
 
     // --- Direct state exposure for UI gating ---
     public static boolean isServerConnected = false;
+    public static boolean isRecording = false;
+    public static boolean isTracking = false;
+    public static String activeTennisMode = "SINGLES";
+    public static String activeTennisTitle = "Singles Match";
 
     // --- LiveData for UI communication ---
     private static final MutableLiveData<Pair<String, String>> statusData = new MutableLiveData<>();
@@ -426,6 +430,8 @@ public class CommunicationService extends Service {
         FileLogger.log(CommunicationService.this, "Disconnecting...");
         isRunning.set(false);
         isServerConnected = false; // Formally drop the network status
+        isRecording = false;       // Reset recording state
+        isTracking = false;        // Reset tracking state
         
         // Clear the images on disconnect to ensure a clean slate for the next connection.
         imageData.postValue(null);

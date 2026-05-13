@@ -24,6 +24,8 @@ package com.murveit.tgcontrol;
  * or triggers a ToneGenerator "beep" for "In" balls during Serve Practice mode.
  * - Error Handling: Intercepts hardware-level watchdog timeouts from the server and displays blocking 
  * Alert Dialogs so the user knows exactly when a Jetson reboot is required.
+ * - Visual Plotting: Extracts bounce X/Y coordinates during Serve Practice and routes them to a custom 
+ * hardware-accelerated `ServeScatterView` for top-down spatial visualization.
  *
  * 3. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Visually disables (greys out) or enables Singles, Doubles, Serve, and Rally buttons in real-time.
@@ -59,7 +61,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
@@ -75,10 +79,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_RECORD_SESSION = "record_session";
 
     // --- Algorithmic Constants for Protocol Parsing ---
-    // Represents the string identifiers used by the server to identify camera arrays
     private static final String SENSOR_ID_LEFT_STR = "0";
     private static final String SENSOR_ID_RIGHT_STR = "1";
-    // Represents the server's boolean-integer string for an active calibration
     private static final String CALIBRATION_ACTIVE_STR = "1";
 
     // --- Algorithmic Constants for Play Modes ---
@@ -88,21 +90,14 @@ public class MainActivity extends AppCompatActivity {
     private static final String MODE_RALLY_PRACTICE = "RALLY_PRACTICE";
 
     // --- Algorithmic Constants for Auditory Feedback ---
-    // Represents the volume level for the 'in' beep tone generator (0-100)
     private static final int BEEP_VOLUME_MAX = 100;
-    // Represents the duration in milliseconds for the happy 'in' beep
     private static final int HAPPY_BEEP_DURATION_MS = 150;
-    // The text string spoken by TTS when a serve is out
     private static final String TTS_TEXT_FAULT = "Fault";
-    // The text string spoken by TTS when a serve is a let
     private static final String TTS_TEXT_LET = "Let";
-    // Cooldown duration in milliseconds before repeating "miles per hour"
     private static final long MPH_COOLDOWN_MS = 60000;
 
     // --- Algorithmic Constants for Client-Side Histogram Calculation ---
-    // Determines how many rows/cols to skip during pixel extraction to preserve UI framerate
     private static final int HISTOGRAM_PIXEL_STRIDE = 5;
-    // The standard number of luminance bins for an 8-bit image channel
     private static final int HISTOGRAM_COLOR_BINS = 256;
 
     private static final String Emulator_HOST = "10.0.2.2";
@@ -121,9 +116,6 @@ public class MainActivity extends AppCompatActivity {
     private int currentState = STATE_DISCONNECTED;
     private Handler mainHandler;
     private boolean isConnected = false;
-    private boolean isRecording = false;
-    private boolean isTracking = false;
-    private String activeTennisMode = MODE_SINGLES;
     
     // Tracking active calibration states for UI locking
     private boolean isLeftCalibrated = false;
@@ -132,8 +124,8 @@ public class MainActivity extends AppCompatActivity {
     // Tracks the last time the full "miles per hour" suffix was spoken
     private long lastSpokenMphTimeMs = 0;
 
-    private Button btnBack, btnConnect;
-    private ImageButton btnPowerOff, btnSettings, btnDebugAudio;
+    private Button btnBack, btnConnect, btnDebugAudio;
+    private ImageButton btnPowerOff, btnSettings;
     private LinearLayout llHome, llHomeButtons, llRawRecording, llTennisMenu, llActiveTennis;
     private TextView tvHomeMessage, tvStatusLine1, tvStatusLine2;
     private Button btnGoRawRecording, btnGoTennis, btnStartRecording, btnCapturePhotos, btnStartTracking;
@@ -142,6 +134,22 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private CheckBox cbRecordSession;
+    
+    // UI Elements for Serve Plotting
+    private LinearLayout llServePlotContainer;
+    private View llTrackingLogContainer; // Added to support the new border layout
+    private View svTrackingLog;
+    private Button btnToggleView;
+    private Button btnClearServes;
+    private TextView tvAvgMph;
+    private TextView tvLastServe;
+    private ServeScatterView serveScatterView;
+    
+    // State Tracking for Serve Plotting
+    private List<ServeScatterView.ServeImpact> serveImpacts = new ArrayList<>();
+    private int totalServeCount = 0;
+    private int inServeCount = 0;
+    private double sumInMph = 0.0;
     
     // Hardware Audio Engines
     private TextToSpeech textToSpeech;
@@ -175,8 +183,18 @@ public class MainActivity extends AppCompatActivity {
         // due to an orientation change returning from calibration, we recover seamlessly here.
         if (CommunicationService.isServerConnected) {
             isConnected = true;
-            switchState(STATE_TENNIS_MENU); // Put user right back on the menu
-            // Wait slightly for UI to mount, then fetch fresh calibration checkmarks from Orin
+            
+            // Seamlessly route user back to their active session if backgrounded
+            if (CommunicationService.isTracking) {
+                startTennisModeUI(CommunicationService.activeTennisMode, CommunicationService.activeTennisTitle);
+                updateTrackingButtons(true);
+            } else if (CommunicationService.isRecording) {
+                switchState(STATE_RAW_RECORDING);
+                updateRecordingButtons(true);
+            } else {
+                switchState(STATE_TENNIS_MENU);
+            }
+            
             mainHandler.postDelayed(() -> sendCommand(buildGetCalibrationStatusCommand()), 250);
         } else {
             switchState(STATE_DISCONNECTED);
@@ -228,6 +246,16 @@ public class MainActivity extends AppCompatActivity {
         tvLiveTelemetry = findViewById(R.id.tvLiveTelemetry);
         cbRecordSession = findViewById(R.id.cbRecordSession);
         
+        // Serve Plot Elements
+        llServePlotContainer = findViewById(R.id.llServePlotContainer);
+        llTrackingLogContainer = findViewById(R.id.llTrackingLogContainer);
+        svTrackingLog = findViewById(R.id.svTrackingLog);
+        btnToggleView = findViewById(R.id.btnToggleView);
+        btnClearServes = findViewById(R.id.btnClearServes);
+        tvAvgMph = findViewById(R.id.tvAvgMph);
+        tvLastServe = findViewById(R.id.tvLastServe);
+        serveScatterView = findViewById(R.id.serveScatterView);
+        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         if (cbRecordSession != null) {
             cbRecordSession.setChecked(prefs.getBoolean(KEY_RECORD_SESSION, false));
@@ -261,17 +289,33 @@ public class MainActivity extends AppCompatActivity {
         if (btnDebugAudio != null) {
             btnDebugAudio.setOnClickListener(v -> {
                 int randomMph = 30 + (int)(Math.random() * 61); // 30 to 90 mph
-                double randX = (Math.random() * 8) - 4;
-                double randY = (Math.random() * 10) - 5;
                 
                 double r = Math.random();
                 String call;
+                double randX, randY;
+                
                 if (r < 0.6) {
+                    // IN: Force mathematical coordinate inside the physical service box bounds
                     call = "In";
+                    randX = (Math.random() * 8.0) - 4.0; // Stay inside singles lines
+                    randY = (Math.random() * 6.0) + 0.2; // Stay between net and service line
                 } else if (r < 0.9) {
-                    call = MODE_SERVE_PRACTICE.equals(activeTennisMode) ? "Fault" : "Out";
+                    // FAULT/OUT: Force coordinate outside the target boxes
+                    call = MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode) ? "Fault" : "Out";
+                    if (Math.random() > 0.5) {
+                        // Wide (Into the doubles alley)
+                        randX = (Math.random() > 0.5 ? 1 : -1) * ((Math.random() * 1.5) + 4.2);
+                        randY = (Math.random() * 6.0) + 0.2;
+                    } else {
+                        // Deep (Past the service line towards the baseline)
+                        randX = (Math.random() * 8.0) - 4.0;
+                        randY = (Math.random() * 5.0) + 6.5; 
+                    }
                 } else {
-                    call = MODE_SERVE_PRACTICE.equals(activeTennisMode) ? "Let" : "In";
+                    // LET: Dropping very close to the net
+                    call = MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode) ? "Let" : "In";
+                    randX = (Math.random() * 8.0) - 4.0;
+                    randY = (Math.random() * 1.0) + 0.1;
                 }
 
                 String fakeJson = String.format(Locale.US,
@@ -294,6 +338,36 @@ public class MainActivity extends AppCompatActivity {
         btnStartRecording.setOnClickListener(v -> toggleRecording());
         btnCapturePhotos.setOnClickListener(v -> sendCommand(buildCaptureCommand()));
         btnStartTracking.setOnClickListener(v -> toggleTracking());
+        
+        if (btnToggleView != null) {
+            btnToggleView.setOnClickListener(v -> {
+                boolean isPlotVisible = llServePlotContainer != null && llServePlotContainer.getVisibility() == View.VISIBLE;
+                
+                if (llServePlotContainer != null) llServePlotContainer.setVisibility(isPlotVisible ? View.GONE : View.VISIBLE);
+                if (tvLastServe != null) tvLastServe.setVisibility(isPlotVisible ? View.GONE : View.VISIBLE);
+                
+                if (llTrackingLogContainer != null) {
+                    llTrackingLogContainer.setVisibility(isPlotVisible ? View.VISIBLE : View.GONE);
+                } else if (svTrackingLog != null) {
+                    svTrackingLog.setVisibility(isPlotVisible ? View.VISIBLE : View.GONE);
+                }
+                
+                btnToggleView.setText(isPlotVisible ? "Plot" : "Log");
+            });
+        }
+
+        if (btnClearServes != null) {
+            btnClearServes.setOnClickListener(v -> {
+                serveImpacts.clear();
+                totalServeCount = 0;
+                inServeCount = 0;
+                sumInMph = 0.0;
+                if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+                if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
+                if (tvTrackingLog != null) tvTrackingLog.setText("");
+                if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+            });
+        }
     }
 
     private void switchState(int newState) {
@@ -309,6 +383,44 @@ public class MainActivity extends AppCompatActivity {
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
                 boolean showDebug = prefs.getBoolean(SettingsActivity.KEY_DEBUG_AUDIO, false);
                 btnDebugAudio.setVisibility((newState == STATE_ACTIVE_TENNIS && showDebug) ? View.VISIBLE : View.GONE);
+            }
+
+            // Hide debugging status lines on Tennis pages to keep the UI clean
+            if (tvStatusLine1 != null && tvStatusLine2 != null) {
+                if (newState == STATE_TENNIS_MENU || newState == STATE_ACTIVE_TENNIS) {
+                    tvStatusLine1.setVisibility(View.GONE);
+                    tvStatusLine2.setVisibility(View.GONE);
+                } else {
+                    tvStatusLine1.setVisibility(View.VISIBLE);
+                    tvStatusLine2.setVisibility(View.VISIBLE);
+                }
+            }
+            
+            // Handle specific Serve Practice layout requirements safely
+            if (newState == STATE_ACTIVE_TENNIS) {
+                if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
+                    // Default to showing the graphical plot when entering Serve Practice
+                    if (btnToggleView != null) btnToggleView.setVisibility(View.VISIBLE);
+                    if (btnClearServes != null) btnClearServes.setVisibility(View.VISIBLE);
+                    if (llServePlotContainer != null) llServePlotContainer.setVisibility(View.VISIBLE);
+                    if (tvAvgMph != null) tvAvgMph.setVisibility(View.VISIBLE);
+                    if (tvLastServe != null) tvLastServe.setVisibility(View.VISIBLE);
+                    
+                    if (llTrackingLogContainer != null) llTrackingLogContainer.setVisibility(View.GONE);
+                    else if (svTrackingLog != null) svTrackingLog.setVisibility(View.GONE);
+                    
+                    if (btnToggleView != null) btnToggleView.setText("Log");
+                } else {
+                    // Force the text log for all other modes
+                    if (btnToggleView != null) btnToggleView.setVisibility(View.GONE);
+                    if (btnClearServes != null) btnClearServes.setVisibility(View.GONE);
+                    if (llServePlotContainer != null) llServePlotContainer.setVisibility(View.GONE);
+                    if (tvAvgMph != null) tvAvgMph.setVisibility(View.GONE);
+                    if (tvLastServe != null) tvLastServe.setVisibility(View.GONE);
+                    
+                    if (llTrackingLogContainer != null) llTrackingLogContainer.setVisibility(View.VISIBLE);
+                    else if (svTrackingLog != null) svTrackingLog.setVisibility(View.VISIBLE);
+                }
             }
 
             if (newState == STATE_DISCONNECTED) {
@@ -387,10 +499,8 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 isConnected = false;
-                isRecording = false;
-                isTracking = false;
-                
-                // Clear calibration locks internally when disconnect occurs
+                CommunicationService.isRecording = false;
+                CommunicationService.isTracking = false;
                 isLeftCalibrated = false;
                 isRightCalibrated = false;
                 updateTennisModeButtonsState();
@@ -444,7 +554,10 @@ public class MainActivity extends AppCompatActivity {
             org.json.JSONObject json = new org.json.JSONObject(message);
             String wallClock = json.optString("wall_clock", "");
             String strikeType = json.optString("strike_type", "Hit");
-            String callStr = json.optString("call_str", "Unknown");
+            
+            // Trim whitespace defensively so matching "In" is bulletproof
+            String callStr = json.optString("call_str", "Unknown").trim();
+
             double mph = json.optDouble("speed_mph", 0.0);
             double sX = json.optDouble("strike_x", 0.0);
             double sY = json.optDouble("strike_y", 0.0);
@@ -462,8 +575,50 @@ public class MainActivity extends AppCompatActivity {
                                              timePrefix, strikeType, callStr, mph);
             appendToTrackingLog(formatted);
             
-            // --- AUDIO FEEDBACK FOR SERVE PRACTICE ---
-            if (MODE_SERVE_PRACTICE.equals(activeTennisMode)) {
+            // --- SERVE PRACTICE VISUALIZATION & AUDIO ---
+            if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
+                
+                // 1. Update Spatial Scatter Plot & Summary Text
+                if (bX != 0.0 || bY != 0.0) {
+                    serveImpacts.add(new ServeScatterView.ServeImpact((float)bX, (float)bY, callStr));
+                    
+                    // Exclude "Let" from mathematical counts completely.
+                    if (!"Let".equalsIgnoreCase(callStr)) {
+                        totalServeCount++;
+                        
+                        // Explicitly isolate "In" averages from Let, Out, and Fault
+                        if ("In".equalsIgnoreCase(callStr)) {
+                            inServeCount++;
+                            if (mph > 0) {
+                                sumInMph += mph;
+                            }
+                        }
+                    }
+                    
+                    if (tvAvgMph != null) {
+                        String avgStr = "--";
+                        String pctStr = "";
+                        if (inServeCount > 0) {
+                            avgStr = String.format(Locale.US, "%.0f", (sumInMph / inServeCount));
+                            // Relying on totalServeCount implicitly being > 0 since inServeCount > 0
+                            pctStr = String.format(Locale.US, " %.0f%%", (inServeCount * 100.0 / totalServeCount));
+                        }
+                        tvAvgMph.setText(String.format(Locale.US, "%d serves, %d In%s, %s MPH avg", totalServeCount, inServeCount, pctStr, avgStr));
+                    }
+
+                    if (serveScatterView != null) {
+                        serveScatterView.setServes(serveImpacts);
+                    }
+                    
+                    // Update single-line summary above the plot
+                    String sideStr = bX > 0 ? "Ad Serve" : "Deuce Serve";
+                    String lastServeStr = String.format(Locale.US, "Last: %s, %s, %.0f mph", sideStr, callStr, mph);
+                    if (tvLastServe != null) {
+                        tvLastServe.setText(lastServeStr);
+                    }
+                }
+
+                // 2. Play Audio Feedback
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
                 boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
                 boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
@@ -539,26 +694,36 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void toggleRecording() {
-        if (!isRecording) {
-            isRecording = true;
+        if (!CommunicationService.isRecording) {
+            CommunicationService.isRecording = true;
             updateRecordingButtons(true);
             sendCommand(buildStartRecordingCommand());
         } else {
-            isRecording = false;
+            CommunicationService.isRecording = false;
             sendCommand(CMD_STOP_RECORDING);
             updateRecordingButtons(false);
         }
     }
 
     private void toggleTracking() {
-        if (!isTracking) {
-            isTracking = true;
+        if (!CommunicationService.isTracking) {
+            CommunicationService.isTracking = true;
             updateTrackingButtons(true);
             tvTrackingLog.setText("");
             tvLiveTelemetry.setText(""); // Erase 1s stats line at startup
-            sendCommand(buildStartTrackingCommand(activeTennisMode));
+            
+            // Clear tracking visualization data specific to this session
+            serveImpacts.clear();
+            totalServeCount = 0;
+            inServeCount = 0;
+            sumInMph = 0.0;
+            if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+            if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
+            if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+            
+            sendCommand(buildStartTrackingCommand(CommunicationService.activeTennisMode));
         } else {
-            isTracking = false;
+            CommunicationService.isTracking = false;
             sendCommand(CMD_STOP_TRACKING);
             updateTrackingButtons(false);
             tvTrackingLog.append("\n--- Stopped ---");
@@ -566,7 +731,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startTennisModeUI(String backendMode, String uiTitle) {
-        activeTennisMode = backendMode;
+        CommunicationService.activeTennisMode = backendMode;
+        CommunicationService.activeTennisTitle = uiTitle;
         tvTennisModeTitle.setText(uiTitle);
         switchState(STATE_ACTIVE_TENNIS);
     }
@@ -597,14 +763,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void appendToTrackingLog(String text) {
-        tvTrackingLog.append("\n" + text);
-        // Post to message queue to ensure the UI paints the new text before scrolling
-        tvTrackingLog.post(() -> {
-            android.widget.ScrollView scrollView = (android.widget.ScrollView) tvTrackingLog.getParent();
-            if (scrollView != null) {
-                scrollView.fullScroll(View.FOCUS_DOWN);
-            }
-        });
+        if (tvTrackingLog != null) {
+            tvTrackingLog.append(text + "\n");
+            tvTrackingLog.post(() -> {
+                if (tvTrackingLog.getParent() instanceof android.widget.ScrollView) {
+                    android.widget.ScrollView scrollView = (android.widget.ScrollView) tvTrackingLog.getParent();
+                    scrollView.fullScroll(View.FOCUS_DOWN);
+                }
+            });
+        }
     }
 
     private void showPowerOffDialog() {
@@ -636,6 +803,10 @@ public class MainActivity extends AppCompatActivity {
     private void disconnectFromServer() {
         startService(new Intent(this, CommunicationService.class).setAction(CommunicationService.ACTION_DISCONNECT));
         isConnected = false;
+        CommunicationService.isTracking = false;
+        CommunicationService.isRecording = false;
+        updateTrackingButtons(false);
+        updateRecordingButtons(false);
         switchState(STATE_DISCONNECTED);
     }
 
@@ -697,8 +868,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        if (currentState == STATE_ACTIVE_TENNIS && !isTracking) switchState(STATE_TENNIS_MENU);
-        else if ((currentState == STATE_RAW_RECORDING || currentState == STATE_TENNIS_MENU) && !isRecording) switchState(STATE_HOME);
+        if (currentState == STATE_ACTIVE_TENNIS && !CommunicationService.isTracking) switchState(STATE_TENNIS_MENU);
+        else if ((currentState == STATE_RAW_RECORDING || currentState == STATE_TENNIS_MENU) && !CommunicationService.isRecording) switchState(STATE_HOME);
         else super.onBackPressed();
     }
 
