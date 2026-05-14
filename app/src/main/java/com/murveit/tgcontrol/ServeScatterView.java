@@ -19,8 +19,9 @@ package com.murveit.tgcontrol;
  * 3. INTERNAL ALGORITHMIC LOGIC:
  * - Coordinate Mapping: Translates physical meters (where X=0 is the center line and Y=0 is the net)
  * into standard Android screen pixels.
- * - The mapping intentionally inverts the Y-axis so the Net (Y=0) is rendered at the bottom
+ * - The mapping intentionally inverts the Y-axis so the Net (Y=0) is rendered at the bottom 
  * of the View, mimicking the server's forward-looking perspective.
+ * - The X-axis is inverted to correctly mirror the visual representation of cross-court serves.
  * - Field of View (FOV) Clamping: Mathematically clamps physical impacts to the boundaries 
  * of the canvas. If a massive fault lands outside the mapped coordinate system, it is pinned 
  * to the extreme edge of the screen so it is never lost or drawn invisibly.

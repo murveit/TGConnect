@@ -338,6 +338,17 @@
                     android:textAllCaps="false" />
             </LinearLayout>
 
+            <Button
+                android:id="@+id/btnResetState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="16dp"
+                android:text="Reset Tracking State"
+                android:textColor="#FF5252"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:textAllCaps="false" />
+
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

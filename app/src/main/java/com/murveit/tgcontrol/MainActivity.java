@@ -178,24 +178,17 @@ public class MainActivity extends AppCompatActivity {
         setupListeners();
         setupObservers();
         
-        // --- Algorithmic Fix: State Recovery ---
-        // Interrogate the persistent background service. If the activity was destroyed by Android
-        // due to an orientation change returning from calibration, we recover seamlessly here.
+        // --- Algorithmic Fix: State Recovery via Server Authority ---
         if (CommunicationService.isServerConnected) {
             isConnected = true;
             
-            // Seamlessly route user back to their active session if backgrounded
-            if (CommunicationService.isTracking) {
-                startTennisModeUI(CommunicationService.activeTennisMode, CommunicationService.activeTennisTitle);
-                updateTrackingButtons(true);
-            } else if (CommunicationService.isRecording) {
-                switchState(STATE_RAW_RECORDING);
-                updateRecordingButtons(true);
-            } else {
-                switchState(STATE_TENNIS_MENU);
-            }
+            // Show home briefly while we ping the server for its true physical state
+            switchState(STATE_HOME);
             
-            mainHandler.postDelayed(() -> sendCommand(buildGetCalibrationStatusCommand()), 250);
+            mainHandler.postDelayed(() -> {
+                sendCommand(buildGetCalibrationStatusCommand());
+                sendCommand("GET_SYSTEM_STATE\n");
+            }, 250);
         } else {
             switchState(STATE_DISCONNECTED);
         }
@@ -469,6 +462,11 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
+            if ("SYSTEM_STATE".equals(status)) {
+                handleSystemState(message);
+                return;
+            }
+
             if ("CALIBRATION_SAVED".equals(message)) {
                 sendCommand(buildGetCalibrationStatusCommand());
             }
@@ -482,6 +480,7 @@ public class MainActivity extends AppCompatActivity {
                     mainHandler.postDelayed(() -> {
                         sendCommand(buildSetTimeCommand());
                         sendCommand(buildGetCalibrationStatusCommand());
+                        sendCommand("GET_SYSTEM_STATE\n");
                     }, 500);
                 }
             } else if ("Error".equals(status) || (message != null && message.startsWith("Disconnected"))) {
@@ -563,6 +562,7 @@ public class MainActivity extends AppCompatActivity {
             double sY = json.optDouble("strike_y", 0.0);
             double bX = json.optDouble("bounce_x", 0.0);
             double bY = json.optDouble("bounce_y", 0.0);
+            String sideStr = json.optString("side", "");
             
             if (strikeType.length() > 0) {
                 strikeType = strikeType.substring(0, 1).toUpperCase() + strikeType.substring(1);
@@ -611,8 +611,14 @@ public class MainActivity extends AppCompatActivity {
                     }
                     
                     // Update single-line summary above the plot
-                    String sideStr = bX > 0 ? "Ad Serve" : "Deuce Serve";
-                    String lastServeStr = String.format(Locale.US, "Last: %s, %s, %.0f mph", sideStr, callStr, mph);
+                    String displaySideStr;
+                    if (!sideStr.isEmpty()) {
+                        displaySideStr = sideStr.endsWith("Court") ? sideStr : sideStr + " Court";
+                    } else {
+                        // Legacy fallback if the Jetson payload is missing the side attribute
+                        displaySideStr = bX > 0 ? "Ad Court" : "Deuce Court";
+                    }
+                    String lastServeStr = String.format(Locale.US, "Last: %s, %s, %.0f mph", displaySideStr, callStr, mph);
                     if (tvLastServe != null) {
                         tvLastServe.setText(lastServeStr);
                     }
@@ -680,6 +686,51 @@ public class MainActivity extends AppCompatActivity {
         });
     }
     
+    private void handleSystemState(String data) {
+        mainHandler.post(() -> {
+            String[] parts = data.split(",");
+            boolean serverTracking = false;
+            boolean serverRecording = false;
+            String serverMode = "";
+
+            for (String part : parts) {
+                String[] pair = part.split("=");
+                if (pair.length == 2) {
+                    if ("TRACKING".equals(pair[0])) serverTracking = "1".equals(pair[1]);
+                    if ("RECORDING".equals(pair[0])) serverRecording = "1".equals(pair[1]);
+                    if ("MODE".equals(pair[0])) serverMode = pair[1];
+                }
+            }
+
+            // Forcefully overwrite Android's local state variables with the Server's Truth
+            CommunicationService.isTracking = serverTracking;
+            CommunicationService.isRecording = serverRecording;
+
+            // Route the UI to match the physical hardware state
+            if (serverTracking && !serverMode.isEmpty() && !"NONE".equals(serverMode)) {
+                CommunicationService.activeTennisMode = serverMode;
+                
+                String title = serverMode;
+                if (MODE_SINGLES.equals(serverMode)) title = "Singles Match";
+                else if (MODE_DOUBLES.equals(serverMode)) title = "Doubles Match";
+                else if (MODE_SERVE_PRACTICE.equals(serverMode)) title = "Serve Practice";
+                else if (MODE_RALLY_PRACTICE.equals(serverMode)) title = "Rally Practice";
+                
+                startTennisModeUI(serverMode, title);
+                updateTrackingButtons(true);
+            } else if (serverRecording) {
+                switchState(STATE_RAW_RECORDING);
+                updateRecordingButtons(true);
+            } else {
+                // If the server is doing nothing, don't automatically force the Tennis Menu.
+                // Only step in and rescue the UI if it falsely thinks it is currently tracking/recording.
+                if (currentState == STATE_ACTIVE_TENNIS || currentState == STATE_RAW_RECORDING || currentState == STATE_DISCONNECTED) {
+                    switchState(STATE_HOME);
+                }
+            }
+        });
+    }
+
     private void updateTennisModeButtonsState() {
         boolean bothCalibrated = isLeftCalibrated && isRightCalibrated;
         

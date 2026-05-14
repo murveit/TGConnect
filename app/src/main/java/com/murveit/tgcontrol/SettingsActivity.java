@@ -121,6 +121,22 @@ public class SettingsActivity extends AppCompatActivity {
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
+        Button btnResetState = findViewById(R.id.btnResetState);
+        if (btnResetState != null) {
+            btnResetState.setOnClickListener(v -> {
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Reset App State")
+                        .setMessage("Force clear the active tracking and recording UI variables? Use this if the app gets stuck out of sync with the server.")
+                        .setPositiveButton("Reset", (dialog, which) -> {
+                            CommunicationService.isTracking = false;
+                            CommunicationService.isRecording = false;
+                            android.widget.Toast.makeText(this, "Internal states reset.", android.widget.Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            });
+        }
+
         Button btnClearLogs = findViewById(R.id.btnClearLogs);
         if (btnClearLogs != null) {
             btnClearLogs.setOnClickListener(v -> {
