@@ -365,7 +365,6 @@ public class CommunicationService extends Service {
                                 statusData.postValue(new Pair<>(null, status));
                             } else {
                                 // For all other text messages, just post them to the UI
-                                FileLogger.log(CommunicationService.this, "Service received: " + serverMessage);
                                 String[] parts = serverMessage.split(":", 2);
                                 String status = parts.length > 1 ? parts[0] : "Server";
                                 String message = parts.length > 1 ? parts[1].trim() : serverMessage;

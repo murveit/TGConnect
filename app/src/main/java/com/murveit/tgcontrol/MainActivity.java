@@ -354,6 +354,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (btnClearServes != null) {
             btnClearServes.setOnClickListener(v -> {
+                FileLogger.log(this, "Clearing serves from plot");
                 serveImpacts.clear();
                 totalServeCount = 0;
                 inServeCount = 0;
@@ -794,6 +795,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void toggleTracking() {
         if (!CommunicationService.isTracking) {
+            FileLogger.log(this, "Start tracking pressed");
             CommunicationService.isTracking = true;
             updateTrackingButtons(true);
             tvTrackingLog.setText("");
@@ -810,6 +812,7 @@ public class MainActivity extends AppCompatActivity {
             
             sendCommand(buildStartTrackingCommand(CommunicationService.activeTennisMode));
         } else {
+            FileLogger.log(this, "Stop tracking pressed");
             CommunicationService.isTracking = false;
             sendCommand(CMD_STOP_TRACKING);
             updateTrackingButtons(false);
