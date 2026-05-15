@@ -265,60 +265,87 @@
 
                 <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="System Calibration"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:gravity="center"
-                    android:paddingBottom="8dp" />
-
                 <!-- Left Calibration Row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <Button
-                        android:id="@+id/btnCalibrateLeft"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="0dp"
+                    android:orientation="vertical">
+                    
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Calibrate Left (Cam 0)" />
-                    <ImageView
-                        android:id="@+id/ivCheckLeft"
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
-                        android:layout_marginStart="8dp"
-                        android:src="@drawable/ic_check"
-                        app:tint="#4CAF50"
-                        android:visibility="gone" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <Button
+                            android:id="@+id/btnCalibrateLeft"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Calibrate Left (Cam 0)" />
+                        <ImageView
+                            android:id="@+id/ivCheckLeft"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_marginStart="8dp"
+                            android:src="@drawable/ic_check"
+                            app:tint="#4CAF50"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                    
+                    <TextView
+                        android:id="@+id/tvPoseLeft"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="11sp"
+                        android:gravity="center"
+                        android:layout_marginTop="-4dp"
+                        android:layout_marginBottom="4dp"
+                        android:textColor="#A0A0A0"
+                        android:visibility="gone"
+                        tools:text="x,y,z -6.23,0.25,0.01m r,p,y=1.2,2.3,0.1º" />
                 </LinearLayout>
 
                 <!-- Right Calibration Row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <Button
-                        android:id="@+id/btnCalibrateRight"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="0dp"
+                    android:layout_marginTop="4dp"
+                    android:orientation="vertical">
+                    
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Calibrate Right (Cam 1)" />
-                    <ImageView
-                        android:id="@+id/ivCheckRight"
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
-                        android:layout_marginStart="8dp"
-                        android:src="@drawable/ic_check"
-                        app:tint="#4CAF50"
-                        android:visibility="gone" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <Button
+                            android:id="@+id/btnCalibrateRight"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Calibrate Right (Cam 1)" />
+                        <ImageView
+                            android:id="@+id/ivCheckRight"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_marginStart="8dp"
+                            android:src="@drawable/ic_check"
+                            app:tint="#4CAF50"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                    
+                    <TextView
+                        android:id="@+id/tvPoseRight"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="11sp"
+                        android:gravity="center"
+                        android:layout_marginTop="-4dp"
+                        android:layout_marginBottom="4dp"
+                        android:textColor="#A0A0A0"
+                        android:visibility="gone"
+                        tools:text="x,y,z 6.23,0.25,0.01m r,p,y=1.2,2.3,0.1º" />
                 </LinearLayout>
             </LinearLayout>
 

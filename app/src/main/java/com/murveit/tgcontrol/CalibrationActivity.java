@@ -265,7 +265,7 @@ public class CalibrationActivity extends AppCompatActivity {
             if (currentState == STATE_TARGET_NEAR_IN) {
                 // All 4 points collected! Fire math processor.
                 advanceState(STATE_VALIDATING);
-                String baselineSide = (sensorId == 0) ? "right" : "left";
+                String baselineSide = (sensorId == 0) ? "left" : "right";
                 
                 StringBuilder sb = new StringBuilder();
                 sb.append("PROCESS_CALIBRATION:").append(sensorId).append(",")

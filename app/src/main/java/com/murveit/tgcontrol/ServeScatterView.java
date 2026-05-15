@@ -19,6 +19,9 @@ package com.murveit.tgcontrol;
  * 3. INTERNAL ALGORITHMIC LOGIC:
  * - Coordinate Mapping: Translates physical meters (where X=0 is the center line and Y=0 is the net)
  * into standard Android screen pixels.
+ * - Canonical Half-Court Folding: Dynamically detects South court coordinates (Y < 0) and 
+ * applies a 180-degree rotation (-X, -Y) to perfectly fold them onto the North court UI 
+ * while preserving the true left/right visual orientation for Deuce/Ad.
  * - The mapping intentionally inverts the Y-axis so the Net (Y=0) is rendered at the bottom 
  * of the View, mimicking the server's forward-looking perspective.
  * - The X-axis is inverted to correctly mirror the visual representation of cross-court serves.
@@ -186,8 +189,20 @@ public class ServeScatterView extends View {
         for (int i = 0; i < serveImpacts.size(); i++) {
             ServeImpact impact = serveImpacts.get(i);
             
-            float px = mapX(impact.x, w);
-            float py = mapY(impact.y, h);
+            float renderX = impact.x;
+            float renderY = impact.y;
+
+            // --- CANONICAL HALF-COURT FOLDING ---
+            // The tracking engine natively outputs unified global coordinates.
+            // Serves in the South court (Y < 0) are mathematically rotated 180 degrees 
+            // (-X, -Y) to perfectly overlay onto the single canonical half-court UI.
+            if (renderY < 0) {
+                renderX = -renderX;
+                renderY = -renderY;
+            }
+            
+            float px = mapX(renderX, w);
+            float py = mapY(renderY, h);
 
             // --- FOV CLAMPING ---
             // If a fault lands outside the mapped dimensions, pin it to the exact edge

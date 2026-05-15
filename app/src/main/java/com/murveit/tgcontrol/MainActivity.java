@@ -133,6 +133,7 @@ public class MainActivity extends AppCompatActivity {
     private HistogramView histView1, histView2;
     private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
+    private TextView tvPoseLeft, tvPoseRight;
     private CheckBox cbRecordSession;
     
     // UI Elements for Serve Plotting
@@ -232,6 +233,8 @@ public class MainActivity extends AppCompatActivity {
         btnModeRally = findViewById(R.id.btnModeRally);
         btnCalibrateLeft = findViewById(R.id.btnCalibrateLeft);
         btnCalibrateRight = findViewById(R.id.btnCalibrateRight);
+        tvPoseLeft = findViewById(R.id.tvPoseLeft);
+        tvPoseRight = findViewById(R.id.tvPoseRight);
         tvTennisModeTitle = findViewById(R.id.tvTennisModeTitle);
         btnStartTracking = findViewById(R.id.btnStartTracking);
         tvTrackingLog = findViewById(R.id.tvTrackingLog);
@@ -424,6 +427,10 @@ public class MainActivity extends AppCompatActivity {
                 btnPowerOff.setEnabled(false);
                 ivCheckLeft.setVisibility(View.GONE);
                 ivCheckRight.setVisibility(View.GONE);
+                if (tvPoseLeft != null) tvPoseLeft.setVisibility(View.GONE);
+                if (tvPoseRight != null) tvPoseRight.setVisibility(View.GONE);
+                if (btnCalibrateLeft != null) btnCalibrateLeft.setText("Calibrate Left");
+                if (btnCalibrateRight != null) btnCalibrateRight.setText("Calibrate Right");
             } else if (newState == STATE_HOME) {
                 llHome.setVisibility(View.VISIBLE);
                 tvHomeMessage.setVisibility(View.GONE);
@@ -670,15 +677,44 @@ public class MainActivity extends AppCompatActivity {
             for (String part : parts) {
                 String[] pair = part.split("=");
                 if (pair.length == 2) {
-                    boolean active = CALIBRATION_ACTIVE_STR.equals(pair[1]);
+                    String sensorId = pair[0];
+                    String valueAndPose = pair[1];
+                    String[] valParts = valueAndPose.split("\\|");
                     
-                    if (SENSOR_ID_LEFT_STR.equals(pair[0])) {
+                    boolean active = "1".equals(valParts[0]);
+                    String poseStr = valParts.length > 1 ? valParts[1] : "";
+                    
+                    if (SENSOR_ID_LEFT_STR.equals(sensorId)) {
                         isLeftCalibrated = active;
                         ivCheckLeft.setVisibility(active ? View.VISIBLE : View.GONE);
+                        if (active) {
+                            btnCalibrateLeft.setText("Calibrate Left");
+                            if (!poseStr.isEmpty()) {
+                                tvPoseLeft.setText(poseStr);
+                                tvPoseLeft.setVisibility(View.VISIBLE);
+                            } else {
+                                tvPoseLeft.setVisibility(View.GONE);
+                            }
+                        } else {
+                            btnCalibrateLeft.setText("Calibrate Left");
+                            tvPoseLeft.setVisibility(View.GONE);
+                        }
                     }
-                    if (SENSOR_ID_RIGHT_STR.equals(pair[0])) {
+                    if (SENSOR_ID_RIGHT_STR.equals(sensorId)) {
                         isRightCalibrated = active;
                         ivCheckRight.setVisibility(active ? View.VISIBLE : View.GONE);
+                        if (active) {
+                            btnCalibrateRight.setText("Calibrate Right");
+                            if (!poseStr.isEmpty()) {
+                                tvPoseRight.setText(poseStr);
+                                tvPoseRight.setVisibility(View.VISIBLE);
+                            } else {
+                                tvPoseRight.setVisibility(View.GONE);
+                            }
+                        } else {
+                            btnCalibrateRight.setText("Calibrate Right");
+                            tvPoseRight.setVisibility(View.GONE);
+                        }
                     }
                 }
             }
