@@ -67,6 +67,11 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_DEBUG_CALIBRATION = "debug_calibration";
     public static final String KEY_DEBUG_AUDIO = "debug_audio";
     public static final String KEY_DET_THRESH = "det_thresh";
+    public static final String KEY_SERVE_THRESH = "serve_thresh";
+    
+    // Default algorithmic constant for serve pruning (90 = 0.90 threshold)
+    private static final int DEFAULT_SERVE_THRESH = 90;
+
 
     private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
@@ -82,6 +87,7 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText etGain;
     private EditText etDigitalGain;
     private EditText etDetThresh;
+    private EditText etServeThresh;
     private SeekBar sbExpComp;
     private TextView tvExpCompLabel;
 
@@ -118,6 +124,7 @@ public class SettingsActivity extends AppCompatActivity {
         etGain = findViewById(R.id.etGain);
         etDigitalGain = findViewById(R.id.etDigitalGain);
         etDetThresh = findViewById(R.id.etDetThresh);
+        etServeThresh = findViewById(R.id.etServeThresh);
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
 
@@ -224,6 +231,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (etGain != null) etGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_GAIN, 1.0f)));
         if (etDigitalGain != null) etDigitalGain.setText(String.format(Locale.US, "%.1f", prefs.getFloat(KEY_DIGITAL_GAIN, 1.0f)));
         if (etDetThresh != null) etDetThresh.setText(String.valueOf(prefs.getInt(KEY_DET_THRESH, 50)));
+        if (etServeThresh != null) etServeThresh.setText(String.valueOf(prefs.getInt(KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH)));
 
         if (sbExpComp != null && tvExpCompLabel != null) {
             int expCompProgress = prefs.getInt(KEY_EXP_COMP_PROGRESS, 8);
@@ -287,6 +295,15 @@ public class SettingsActivity extends AppCompatActivity {
                 editor.putInt(KEY_DET_THRESH, Math.max(0, Math.min(100, thresh)));
             } catch (NumberFormatException e) {
                 editor.putInt(KEY_DET_THRESH, 50);
+            }
+        }
+
+        if (etServeThresh != null) {
+            try {
+                int serveThresh = Integer.parseInt(etServeThresh.getText().toString());
+                editor.putInt(KEY_SERVE_THRESH, Math.max(0, Math.min(100, serveThresh)));
+            } catch (NumberFormatException e) {
+                editor.putInt(KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH);
             }
         }
 

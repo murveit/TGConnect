@@ -107,6 +107,9 @@ public class CommunicationService extends Service {
     // Algorithmic Fix: Persistent buffer to survive SocketTimeoutExceptions during slow TCP transfers
     private final ByteArrayOutputStream currentLineBuffer = new ByteArrayOutputStream();
 
+    // Thread-safety lock for concurrent command dispatching
+    private final Object sendLock = new Object();
+
     // --- Public accessors for MainActivity to observe LiveData ---
     public static LiveData<Pair<String, String>> getStatusData() {
         return statusData;
@@ -416,8 +419,11 @@ public class CommunicationService extends Service {
         }
         new Thread(() -> {
             try {
-                outputStream.write(command.getBytes(StandardCharsets.UTF_8));
-                outputStream.flush();
+                // Ensure atomic string writing to prevent byte interleaving on the TCP socket
+                synchronized (sendLock) {
+                    outputStream.write(command.getBytes(StandardCharsets.UTF_8));
+                    outputStream.flush();
+                }
                 FileLogger.log(CommunicationService.this, "Service sent command: " + command.trim());
             } catch (Exception e) {
                 FileLogger.log(CommunicationService.this, "Service failed to send command", e);

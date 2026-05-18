@@ -11,6 +11,8 @@ package com.murveit.tgcontrol;
  * - On creation or recreation (e.g., orientation changes), checks the persistent `CommunicationService` 
  * to see if an active socket exists. If so, it recovers the UI state seamlessly without dropping the connection.
  * - Sets default UI state to DISCONNECTED if no active connection is found.
+ * - Applies FLAG_KEEP_SCREEN_ON to the Window Manager to prevent the Android OS from sleeping the display 
+ * and aggressively severing active TCP tracking sockets.
  *
  * 2. INTERNAL ALGORITHMIC LOGIC:
  * - On connection, sends "GET_CALIBRATION_STATUS" to the Jetson.
@@ -47,6 +49,7 @@ import android.preference.PreferenceManager;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.ImageButton;
@@ -100,6 +103,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int HISTOGRAM_PIXEL_STRIDE = 5;
     private static final int HISTOGRAM_COLOR_BINS = 256;
 
+    private static final int DEFAULT_SERVE_THRESH = 90;
+    
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
     private static final String TG_CHICO_HOST = "192.168.86.43";
@@ -161,6 +166,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        
+        // Prevent screen sleep to maintain TCP socket integrity during active tracking
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        
         requestNotificationPermission();
         mainHandler = new Handler(Looper.getMainLooper());
         
@@ -570,7 +579,11 @@ public class MainActivity extends AppCompatActivity {
             double sY = json.optDouble("strike_y", 0.0);
             double bX = json.optDouble("bounce_x", 0.0);
             double bY = json.optDouble("bounce_y", 0.0);
+            String reason = json.optString("reason", "");
             String sideStr = json.optString("side", "");
+
+            FileLogger.log(this, String.format(Locale.US, "processTrackEvent: Type=%s, Call=%s, bX=%.2f, bY=%.2f, MPH=%.1f reason=%s", strikeType, callStr, bX, bY, mph, reason));
+
             
             if (strikeType.length() > 0) {
                 strikeType = strikeType.substring(0, 1).toUpperCase() + strikeType.substring(1);
@@ -588,6 +601,7 @@ public class MainActivity extends AppCompatActivity {
                 
                 // 1. Update Spatial Scatter Plot & Summary Text
                 if (bX != 0.0 || bY != 0.0) {
+                    FileLogger.log(this, "PLOTTING DOT AT: X=" + bX + " Y=" + bY);
                     serveImpacts.add(new ServeScatterView.ServeImpact((float)bX, (float)bY, callStr));
                     
                     // Exclude "Let" from mathematical counts completely.
@@ -923,6 +937,7 @@ public class MainActivity extends AppCompatActivity {
           .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
           .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
           .append(",debug_calib=").append(prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false) ? 1 : 0)
+          .append(",serve_thresh=").append(prefs.getInt(SettingsActivity.KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH))
           .append("\n");
         return sb.toString();
     }
