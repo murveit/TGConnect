@@ -643,6 +643,20 @@ public class MainActivity extends AppCompatActivity {
                     String lastServeStr = String.format(Locale.US, "Last: %s, %s, %.0f mph", displaySideStr, callStr, mph);
                     if (tvLastServe != null) {
                         tvLastServe.setText(lastServeStr);
+                        
+                        if ("In".equalsIgnoreCase(callStr)) {
+                            tvLastServe.setBackgroundColor(android.graphics.Color.parseColor("#00E676"));
+                        } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+                            tvLastServe.setBackgroundColor(android.graphics.Color.parseColor("#FF1744"));
+                        } else if ("Let".equalsIgnoreCase(callStr)) {
+                            tvLastServe.setBackgroundColor(android.graphics.Color.parseColor("#FFEA00"));
+                        }
+                        
+                        mainHandler.postDelayed(() -> {
+                            if (tvLastServe != null) {
+                                tvLastServe.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                            }
+                        }, 1000);
                     }
                 }
 
