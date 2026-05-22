@@ -84,6 +84,10 @@ public class CalibrationActivity extends AppCompatActivity {
     private Matrix imageMatrix = new Matrix();
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
+    // Tracks scroll translations applied since the last ACTION_DOWN so they can be
+    // cancelled by onScaleBegin if the gesture turns out to be a pinch-zoom.
+    private float scrollDeltaX = 0f;
+    private float scrollDeltaY = 0f;
 
     // --- UI Widgets ---
     private ImageView ivCalibrationImage;
@@ -135,19 +139,49 @@ public class CalibrationActivity extends AppCompatActivity {
     private void setupTouchMatrix() {
         scaleDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override
+            public boolean onScaleBegin(ScaleGestureDetector detector) {
+                // Second finger has landed: this is confirmed pinch-zoom, not a scroll.
+                // Roll back any scroll translations that fired in the brief window between
+                // the first and second finger touching down.
+                if (scrollDeltaX != 0f || scrollDeltaY != 0f) {
+                    imageMatrix.postTranslate(-scrollDeltaX, -scrollDeltaY);
+                    ivCalibrationImage.setImageMatrix(imageMatrix);
+                    scrollDeltaX = 0f;
+                    scrollDeltaY = 0f;
+                }
+                return true;
+            }
+
+            @Override
             public boolean onScale(ScaleGestureDetector detector) {
                 float scaleFactor = detector.getScaleFactor();
                 imageMatrix.postScale(scaleFactor, scaleFactor, detector.getFocusX(), detector.getFocusY());
                 ivCalibrationImage.setImageMatrix(imageMatrix);
                 return true;
             }
+
+            @Override
+            public void onScaleEnd(ScaleGestureDetector detector) {
+                // Reset accumulator so a follow-on single-finger scroll starts clean.
+                scrollDeltaX = 0f;
+                scrollDeltaY = 0f;
+            }
         });
 
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                // Guard: ScaleGestureDetector and GestureDetector both receive all touch events.
+                // Without this check, an ongoing pinch also fires onScroll, causing the matrix
+                // to accumulate spurious translations that corrupt coordinate extraction.
+                if (scaleDetector.isInProgress()) return false;
                 // PostTranslate requires absolute direction. distanceX/Y is "scroll delta", so we invert it.
-                imageMatrix.postTranslate(-distanceX, -distanceY);
+                float tx = -distanceX;
+                float ty = -distanceY;
+                // Accumulate so onScaleBegin can roll back if this scroll preceded a pinch-zoom.
+                scrollDeltaX += tx;
+                scrollDeltaY += ty;
+                imageMatrix.postTranslate(tx, ty);
                 ivCalibrationImage.setImageMatrix(imageMatrix);
                 return true;
             }
@@ -171,6 +205,12 @@ public class CalibrationActivity extends AppCompatActivity {
         });
 
         ivCalibrationImage.setOnTouchListener((v, event) -> {
+            // Reset scroll accumulator on each new touch sequence so prior scroll
+            // deltas don't bleed into a completely separate gesture.
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                scrollDeltaX = 0f;
+                scrollDeltaY = 0f;
+            }
             scaleDetector.onTouchEvent(event);
             gestureDetector.onTouchEvent(event);
             return true;
@@ -219,7 +259,12 @@ public class CalibrationActivity extends AppCompatActivity {
         
         int viewWidth = ivCalibrationImage.getWidth();
         int viewHeight = ivCalibrationImage.getHeight();
-        if (viewWidth == 0 || viewHeight == 0) return;
+        if (viewWidth == 0 || viewHeight == 0) {
+            // Layout hasn't been measured yet. Re-post so we retry after the next layout pass
+            // rather than silently leaving the matrix uninitialized.
+            ivCalibrationImage.post(() -> resetMatrixForBitmap(bmp));
+            return;
+        }
         
         // Scale to perfectly fit the vertical bounds of the landscape display
         baseScale = (float) viewHeight / bmp.getHeight();
