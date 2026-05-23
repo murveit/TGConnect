@@ -566,11 +566,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void processTrackEventJson(String message) {
+        final long receiveMs = System.currentTimeMillis();
         try {
             org.json.JSONObject json = new org.json.JSONObject(message);
             String wallClock = json.optString("wall_clock", "");
             String strikeType = json.optString("strike_type", "Hit");
-            
+
             // Trim whitespace defensively so matching "In" is bulletproof
             String callStr = json.optString("call_str", "Unknown").trim();
 
@@ -581,6 +582,12 @@ public class MainActivity extends AppCompatActivity {
             double bY = json.optDouble("bounce_y", 0.0);
             String reason = json.optString("reason", "");
             String sideStr = json.optString("side", "");
+
+            long serverSendMs = json.optLong("server_send_unix_ms", 0L);
+            final long transportMs = (serverSendMs > 0) ? (receiveMs - serverSendMs) : -1L;
+            FileLogger.log(this, String.format(Locale.US,
+                "[LATENCY] JSON_RECEIVED bounce_frame=%d server_send_ms=%d receive_ms=%d transport_ms=%d",
+                json.optInt("bounce_frame", -1), serverSendMs, receiveMs, transportMs));
 
             FileLogger.log(this, String.format(Locale.US, "processTrackEvent: Type=%s, Call=%s, bX=%.2f, bY=%.2f, MPH=%.1f reason=%s", strikeType, callStr, bX, bY, mph, reason));
 
@@ -651,7 +658,13 @@ public class MainActivity extends AppCompatActivity {
                         } else if ("Let".equalsIgnoreCase(callStr)) {
                             tvLastServe.setBackgroundColor(android.graphics.Color.parseColor("#FFEA00"));
                         }
-                        
+
+                        final long colorSetMs = System.currentTimeMillis();
+                        tvLastServe.post(() -> FileLogger.log(MainActivity.this, String.format(Locale.US,
+                            "[LATENCY] RENDER_DONE transport_ms=%d receive_to_color_ms=%d color_to_vsync_ms=%d total_receive_to_vsync_ms=%d",
+                            transportMs, colorSetMs - receiveMs, System.currentTimeMillis() - colorSetMs,
+                            System.currentTimeMillis() - receiveMs)));
+
                         mainHandler.postDelayed(() -> {
                             if (tvLastServe != null) {
                                 tvLastServe.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -968,7 +981,7 @@ public class MainActivity extends AppCompatActivity {
         String recordFlag = cbRecordSession != null && cbRecordSession.isChecked() ? "RECORD=1" : "RECORD=0";
         return "START_TRACKING:" + m + "," + recordFlag + "," + getSettingsPayload(true);
     }
-    private String buildSetTimeCommand() { return "SET_TIME:" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()) + "\n"; }
+    private String buildSetTimeCommand() { return "SET_TIME_MS:" + System.currentTimeMillis() + "\n"; }
 
     private void updateUIStatus(String l1, String l2) {
         mainHandler.post(() -> {
