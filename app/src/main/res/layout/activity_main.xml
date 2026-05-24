@@ -92,6 +92,15 @@
                 app:tint="?attr/colorOnSurface" />
         </LinearLayout>
 
+        <!-- Network reachability indicator: shown only in STATE_DISCONNECTED -->
+        <TextView
+            android:id="@+id/tvNetworkStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="2dp"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
         <!-- Global Status Lines -->
         <TextView
             android:id="@+id/tvStatus1"
@@ -509,4 +518,46 @@
             </LinearLayout>
         </FrameLayout>
     </LinearLayout>
+
+    <!-- Disconnect Overlay: rendered on top of all content via CoordinatorLayout z-ordering.
+         Shown when WiFi drops while connected; dismissed on reconnect or full disconnect.
+         Background is 80% opaque black to make the message legible over any screen state.
+         The Disconnect button lets the user escape the grace period immediately rather than
+         waiting for it to expire. -->
+    <LinearLayout
+        android:id="@+id/llDisconnectOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WiFi Disconnected"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Waiting to reconnect..."
+            android:textColor="#DDDDDD"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btnOverlayDisconnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="Disconnect"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#AA444444" />
+
+    </LinearLayout>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

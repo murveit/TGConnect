@@ -11,12 +11,16 @@ import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.NetworkRequest;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
 import android.util.Pair;
@@ -56,18 +60,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - Stop service: Send Intent with `ACTION_DISCONNECT`.
  *
  * 3. INTERNAL ALGORITHMIC LOGIC (Step-by-Step):
- * - Network Request: Requests a WiFi-only connection, explicitly removing the internet 
+ * - Network Request: Requests a WiFi-only connection, explicitly removing the internet
  * capability requirement to prevent Android from dropping the captive portal AP.
  * - Process Binding: Binds the entire app process to the Jetson's WiFi network (ignoring cellular).
- * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks utilizing a 
+ * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks utilizing a
  * persistent ByteArrayOutputStream to safely handle fragmented TCP packets and socket timeouts.
  * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:") and intercepts
  * binary image transfers by reading fixed-length headers.
  * - UI Delegation: Posts parsed data and Bitmaps to statically accessible `LiveData` objects.
- * - Lifecycle Management: Implementation of onTaskRemoved ensures that swiping the app kills 
- * the service and closes the socket immediately, preventing "Zombie" connections.
+ * - WiFi Grace Period: When onLost fires, a WIFI_LOSS_GRACE_PERIOD_MS timer starts instead of
+ *   immediately disconnecting. If onAvailable fires within the window, the timer is cancelled
+ *   and the socket is re-established automatically. If the timer expires, a full disconnect
+ *   fires. During the grace period, disconnect() performs a partial teardown (closes socket
+ *   only) so the network callback remains registered for the auto-reconnect.
+ * - Lifecycle Management: Implementation of onTaskRemoved ensures that swiping the app kills
+ *   the service and closes the socket immediately, preventing "Zombie" connections.
  * - Data Invalidation: Explicitly clears imageData LiveData when starting new calibration or
- * capture sequences to prevent "sticky" stale images from being shown to the user.
+ *   capture sequences to prevent "sticky" stale images from being shown to the user.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Keeps the Android WiFi radio locked to the Jetson.
@@ -84,6 +93,11 @@ public class CommunicationService extends Service {
     public static final String EXTRA_COMMAND = "com.murveit.tgcontrol.extra.COMMAND";
     public static final String EXTRA_SERVER_ADDRESS = "com.murveit.tgcontrol.extra.SERVER_ADDRESS";
     private static final int SIZE_HEADER_LENGTH = 10;
+    // Duration to wait for WiFi to recover before declaring a full disconnect.
+    // Chosen to absorb transient blips (observed at ~12s) without forcing the user
+    // through the full reconnect flow.
+    private static final long WIFI_LOSS_GRACE_PERIOD_MS = 13000;
+
     private long recordingStartTime = 0;
 
     // --- Direct state exposure for UI gating ---
@@ -128,6 +142,15 @@ public class CommunicationService extends Service {
     // Thread-safety lock for concurrent command dispatching
     private final Object sendLock = new Object();
 
+    // Last server address saved for auto-reconnect after a WiFi grace period recovery.
+    private String lastServerAddress = null;
+    // Grace period: scheduled runnable fires a full disconnect if WiFi does not return.
+    private final Handler wifiGraceHandler = new Handler(Looper.getMainLooper());
+    private Runnable wifiGraceRunnable = null;
+    // True during the window between onLost and either onAvailable or grace expiry.
+    // Causes disconnect() to perform only a partial teardown (close socket, keep callback).
+    private volatile boolean isInGracePeriod = false;
+
     // --- Public accessors for MainActivity to observe LiveData ---
     public static LiveData<Pair<String, String>> getStatusData() {
         return statusData;
@@ -135,6 +158,27 @@ public class CommunicationService extends Service {
 
     public static LiveData<Pair<Bitmap, String>> getImageData() {
         return imageData;
+    }
+
+    /**
+     * Returns true if the device's active network has a link-local address on the same /24
+     * subnet as {@code serverAddress} (e.g. "10.42.0.1" → prefix "10.42.0."). Used by
+     * MainActivity to gate the Connect button before a connection attempt is made.
+     */
+    public static boolean isOnServerNetwork(ConnectivityManager cm, String serverAddress) {
+        if (cm == null || serverAddress == null || serverAddress.isEmpty()) return false;
+        int lastDot = serverAddress.lastIndexOf('.');
+        if (lastDot <= 0) return false;
+        String expectedPrefix = serverAddress.substring(0, lastDot + 1);
+        Network activeNetwork = cm.getActiveNetwork();
+        if (activeNetwork == null) return false;
+        LinkProperties lp = cm.getLinkProperties(activeNetwork);
+        if (lp == null) return false;
+        for (LinkAddress la : lp.getLinkAddresses()) {
+            String addr = la.getAddress().getHostAddress();
+            if (addr != null && addr.startsWith(expectedPrefix)) return true;
+        }
+        return false;
     }
 
     @Override
@@ -171,6 +215,7 @@ public class CommunicationService extends Service {
                 FileLogger.log(CommunicationService.this, "Connecting to: " + serverAddress);
                 connect(serverAddress);
             } else if (ACTION_DISCONNECT.equals(action)) {
+                cancelGracePeriod();
                 disconnect();
                 stopSelf();
             } else if (ACTION_SEND_COMMAND.equals(action)) {
@@ -188,6 +233,7 @@ public class CommunicationService extends Service {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         FileLogger.log(this, "App swiped away. Shutting down service and connection.");
+        cancelGracePeriod();
         disconnect();
         stopSelf();
         super.onTaskRemoved(rootIntent);
@@ -195,15 +241,32 @@ public class CommunicationService extends Service {
 
     private void connect(String serverAddress) {
         FileLogger.log(CommunicationService.this, "Attempting to connect to: " + serverAddress);
-        
-        // REFINEMENT: Instead of just returning, we force a cleanup of any previous
-        // zombie state to ensure the new UI instance gets a fresh socket.
+
+        // Always cancel any active grace period first so the following cleanup uses
+        // the full-disconnect path (isInGracePeriod=false).
+        cancelGracePeriod();
+
         if (isRunning.get()) {
             FileLogger.log(CommunicationService.this, "Connection attempt while already running. Forcing reset.");
             disconnect();
+        } else if (networkCallback != null) {
+            // A grace-period partial disconnect left the old callback registered and
+            // the locks held. Unregister and release before registering a new callback,
+            // otherwise onAvailable fires twice and we get two communication threads.
+            FileLogger.log(CommunicationService.this, "Cleaning up stale network callback from grace period.");
+            if (connectivityManager != null) {
+                try {
+                    connectivityManager.unregisterNetworkCallback(networkCallback);
+                } catch (Exception e) {
+                    FileLogger.log(CommunicationService.this, "Stale callback already unregistered.");
+                }
+            }
+            networkCallback = null;
+            stopRecordingLocks();
         }
 
         isRunning.set(true);
+        lastServerAddress = serverAddress;
         startRecordingLocks();
 
         // 1. Show Foreground Notification
@@ -242,16 +305,92 @@ public class CommunicationService extends Service {
             @Override
             public void onAvailable(@NonNull Network network) {
                 super.onAvailable(network);
-                FileLogger.log(CommunicationService.this, "WiFi Network Available. Binding process to WiFi...");
 
-                // FORCE the app to use this WiFi network, ignoring cellular data
+                // Log the IP addresses on this new network so we have a diagnostic trail
+                // regardless of whether we proceed with reconnect.
+                StringBuilder linkAddrLog = new StringBuilder("onAvailable link addresses:");
+                LinkProperties lp = connectivityManager.getLinkProperties(network);
+                if (lp != null) {
+                    for (LinkAddress la : lp.getLinkAddresses()) {
+                        linkAddrLog.append(" ").append(la.getAddress().getHostAddress());
+                    }
+                } else {
+                    linkAddrLog.append(" (LinkProperties null)");
+                }
+                FileLogger.log(CommunicationService.this, linkAddrLog.toString());
+
+                // Derive the expected subnet prefix from the server address
+                // (e.g. "10.42.0.1" → "10.42.0.") so the check adapts if the IP changes.
+                String expectedPrefix = "";
+                if (lastServerAddress != null) {
+                    int lastDot = lastServerAddress.lastIndexOf('.');
+                    if (lastDot > 0) {
+                        expectedPrefix = lastServerAddress.substring(0, lastDot + 1);
+                    }
+                }
+
+                // Verify the new network actually contains the server's subnet.
+                // The NetworkRequest fires for ANY WiFi network; if the phone joined a
+                // different AP (e.g. home router) during the grace period, we must not
+                // attempt a reconnect on the wrong network.
+                boolean isCorrectNetwork = false;
+                if (lp != null && !expectedPrefix.isEmpty()) {
+                    for (LinkAddress la : lp.getLinkAddresses()) {
+                        String addr = la.getAddress().getHostAddress();
+                        if (addr != null && addr.startsWith(expectedPrefix)) {
+                            isCorrectNetwork = true;
+                            break;
+                        }
+                    }
+                }
+                FileLogger.log(CommunicationService.this,
+                        "onAvailable: expectedPrefix=" + expectedPrefix
+                        + " isCorrectNetwork=" + isCorrectNetwork);
+
+                boolean wasInGracePeriod = isInGracePeriod;
+
+                if (!isCorrectNetwork && wasInGracePeriod) {
+                    // The phone joined a different AP, which means the Nano's hotspot is
+                    // genuinely gone (not a brief blip). Waiting out the full grace period
+                    // is pointless; cancel it and disconnect now so the user gets the
+                    // disconnected UI immediately and can take action.
+                    FileLogger.log(CommunicationService.this,
+                            "onAvailable: wrong network during grace period — Nano hotspot gone. "
+                            + "Cancelling grace period and disconnecting. server=" + lastServerAddress);
+                    cancelGracePeriod(); // sets isInGracePeriod=false before disconnect()
+                    disconnect();
+                    stopSelf();
+                    return;
+                }
+
+                // Cancel any pending grace period timer; the correct WiFi has returned.
+                if (wifiGraceRunnable != null) {
+                    wifiGraceHandler.removeCallbacks(wifiGraceRunnable);
+                    wifiGraceRunnable = null;
+                    FileLogger.log(CommunicationService.this,
+                            "WiFi restored within grace period. Cancelling disconnect timer.");
+                }
+                isInGracePeriod = false;
+
+                FileLogger.log(CommunicationService.this,
+                        "WiFi Network Available. Binding process to WiFi. wasInGracePeriod=" + wasInGracePeriod);
                 connectivityManager.bindProcessToNetwork(network);
 
-                // Now that we are bound, start the actual communication thread
-                // FIX: Wait a quarter-second for the OS routing to settle.
-                // This prevents the "first-time drop" bug.
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    if (isRunning.get()) {
+                if (wasInGracePeriod) {
+                    // Notify the UI so the disconnect overlay can be dismissed.
+                    statusData.postValue(new Pair<>("WIFI_RESTORED", null));
+                }
+
+                // Wait a quarter-second for OS routing to settle, then start (or restart) the socket.
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (wasInGracePeriod && !isRunning.get() && lastServerAddress != null) {
+                        // Socket died during grace period; re-establish connection.
+                        FileLogger.log(CommunicationService.this,
+                                "Reconnecting after WiFi restored. Server: " + lastServerAddress);
+                        isRunning.set(true);
+                        startRecordingLocks();
+                        startCommunicationThread(lastServerAddress);
+                    } else if (!wasInGracePeriod && isRunning.get()) {
                         startCommunicationThread(serverAddress);
                     }
                 }, 250);
@@ -260,9 +399,26 @@ public class CommunicationService extends Service {
             @Override
             public void onLost(@NonNull Network network) {
                 super.onLost(network);
-                FileLogger.log(CommunicationService.this, "WiFi Network Lost. Unbinding...");
+                FileLogger.log(CommunicationService.this, "WiFi Network Lost. Starting " +
+                        (WIFI_LOSS_GRACE_PERIOD_MS / 1000) + "s grace period before disconnecting.");
                 connectivityManager.bindProcessToNetwork(null);
-                disconnect();
+
+                // Enter grace period: socket will die via IOException but callback stays registered.
+                isInGracePeriod = true;
+                statusData.postValue(new Pair<>("WIFI_LOST", null));
+
+                // Schedule a full disconnect if WiFi does not return within the grace window.
+                wifiGraceRunnable = () -> {
+                    FileLogger.log(CommunicationService.this, "WiFi grace period expired. Performing full disconnect.");
+                    isInGracePeriod = false;
+                    // Notify MainActivity so it exits the overlay and goes to STATE_DISCONNECTED.
+                    // Use a message starting with "Disconnected" to hit the disconnect handler
+                    // without triggering the AlertDialog (which "Error" status would do).
+                    statusData.postValue(new Pair<>("Status", "Disconnected: WiFi not restored within grace period."));
+                    disconnect();
+                    stopSelf();
+                };
+                wifiGraceHandler.postDelayed(wifiGraceRunnable, WIFI_LOSS_GRACE_PERIOD_MS);
             }
         };
 
@@ -405,8 +561,13 @@ public class CommunicationService extends Service {
                     } catch (IOException e) {
                         if (isRunning.get()) {
                             FileLogger.log(CommunicationService.this, "IO Error: Connection likely dropped by Orin.", e);
-                            // Instead of just logging, trigger a full reset
-                            statusData.postValue(new Pair<>("Error", "Server dropped connection."));
+                            // During a WiFi grace period the socket death is expected — the overlay
+                            // is already shown and we are waiting for the network to return.
+                            // Posting "Error" here would trigger the AlertDialog and route the UI
+                            // to STATE_DISCONNECTED, defeating the grace period entirely.
+                            if (!isInGracePeriod) {
+                                statusData.postValue(new Pair<>("Error", "Server dropped connection."));
+                            }
                         } else {
                             FileLogger.log(CommunicationService.this, "IO Error: Socket closed intentionally during disconnect.");
                         }
@@ -416,7 +577,9 @@ public class CommunicationService extends Service {
             } catch (Exception e) {
                 if (isRunning.get()) {
                     FileLogger.log(CommunicationService.this, "Connection failed or lost", e);
-                    statusData.postValue(new Pair<>("Error", "Connection lost: " + e.getMessage()));
+                    if (!isInGracePeriod) {
+                        statusData.postValue(new Pair<>("Error", "Connection lost: " + e.getMessage()));
+                    }
                 }
             } finally {
                 disconnect();
@@ -501,27 +664,29 @@ public class CommunicationService extends Service {
     }
 
     private void disconnect() {
-        FileLogger.log(CommunicationService.this, "Disconnecting...");
+        FileLogger.log(CommunicationService.this, "Disconnecting... (gracePeriod=" + isInGracePeriod + ")");
         isRunning.set(false);
-        isServerConnected = false; // Formally drop the network status
-        isRecording = false;       // Reset recording state
-        isTracking = false;        // Reset tracking state
-        
+        isServerConnected = false;
+
         // Clear the images on disconnect to ensure a clean slate for the next connection.
         imageData.postValue(null);
-        
-        // Crucial: Release locks when the connection drops or is closed
-        stopRecordingLocks();
 
-        // Release WiFi Binding
-        if (connectivityManager != null && networkCallback != null) {
-            connectivityManager.bindProcessToNetwork(null);
-            try {
-                connectivityManager.unregisterNetworkCallback(networkCallback);
-            } catch (Exception e) {
-                FileLogger.log(CommunicationService.this, "Callback already unregistered");
+        if (!isInGracePeriod) {
+            // Full disconnect: reset all state and release everything.
+            isRecording = false;
+            isTracking = false;
+            stopRecordingLocks();
+
+            if (connectivityManager != null && networkCallback != null) {
+                connectivityManager.bindProcessToNetwork(null);
+                try {
+                    connectivityManager.unregisterNetworkCallback(networkCallback);
+                } catch (Exception e) {
+                    FileLogger.log(CommunicationService.this, "Callback already unregistered");
+                }
             }
         }
+        // Both partial and full: close the socket so the read loop exits.
         try {
             if (socket != null) {
                 socket.close();
@@ -536,7 +701,9 @@ public class CommunicationService extends Service {
             outputStream = null;
             inputStream = null;
             communicationThread = null;
-            stopForeground(true);
+            if (!isInGracePeriod) {
+                stopForeground(true);
+            }
         }
     }
 
@@ -578,7 +745,9 @@ public class CommunicationService extends Service {
             }
         } catch (Exception e) {
             FileLogger.log(CommunicationService.this, "Failed to receive image frame", e);
-            statusData.postValue(new Pair<>("Error", "Failed to receive image."));
+            if (!isInGracePeriod) {
+                statusData.postValue(new Pair<>("Error", "Failed to receive image."));
+            }
         }
     }
 
@@ -604,8 +773,21 @@ public class CommunicationService extends Service {
         return null;
     }
 
+    // Cancels any pending grace period runnable and resets the grace period flag.
+    // Call before any intentional disconnect to ensure a full (not partial) teardown.
+    private void cancelGracePeriod() {
+        if (wifiGraceRunnable != null) {
+            wifiGraceHandler.removeCallbacks(wifiGraceRunnable);
+            wifiGraceRunnable = null;
+            FileLogger.log(this, "Grace period cancelled (intentional disconnect).");
+        }
+        isInGracePeriod = false;
+    }
+
     // Call this when you start your socket recording
     private void startRecordingLocks() {
+        FileLogger.log(this, "startRecordingLocks: wakeLockHeld=" + (wakeLock != null && wakeLock.isHeld())
+                + " wifiLockHeld=" + (wifiLock != null && wifiLock.isHeld()));
         if (wakeLock != null && !wakeLock.isHeld()) {
             wakeLock.acquire(); // Keeps CPU awake
         }
@@ -616,6 +798,8 @@ public class CommunicationService extends Service {
 
     // Call this when you stop recording or the socket closes
     private void stopRecordingLocks() {
+        FileLogger.log(this, "stopRecordingLocks: wakeLockHeld=" + (wakeLock != null && wakeLock.isHeld())
+                + " wifiLockHeld=" + (wifiLock != null && wifiLock.isHeld()));
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
@@ -626,6 +810,7 @@ public class CommunicationService extends Service {
 
     @Override
     public void onDestroy() {
+        cancelGracePeriod();
         stopRecordingLocks(); // Safety check
         super.onDestroy();
         disconnect();

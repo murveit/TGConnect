@@ -41,6 +41,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -57,6 +61,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -154,6 +160,14 @@ public class MainActivity extends AppCompatActivity {
 
     // Recording indicator icon (right side of title bar)
     private ImageView ivRecordingIndicator;
+
+    // Disconnect overlay: full-screen semi-transparent view shown on WiFi loss while connected.
+    private LinearLayout llDisconnectOverlay;
+
+    // Network reachability indicator shown in STATE_DISCONNECTED.
+    private TextView tvNetworkStatus;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback mainActivityNetworkCallback;
     
     // Hardware Audio Engines
     private TextToSpeech textToSpeech;
@@ -263,7 +277,10 @@ public class MainActivity extends AppCompatActivity {
         tvLastServe = findViewById(R.id.tvLastServe);
         serveScatterView = findViewById(R.id.serveScatterView);
         ivRecordingIndicator = findViewById(R.id.ivRecordingIndicator);
-        
+        llDisconnectOverlay = findViewById(R.id.llDisconnectOverlay);
+        tvNetworkStatus = findViewById(R.id.tvNetworkStatus);
+        connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         if (cbRecordSession != null) {
             cbRecordSession.setChecked(prefs.getBoolean(KEY_RECORD_SESSION, false));
@@ -444,12 +461,16 @@ public class MainActivity extends AppCompatActivity {
                 if (tvPoseRight != null) tvPoseRight.setVisibility(View.GONE);
                 if (btnCalibrateLeft != null) btnCalibrateLeft.setText("Calibrate Left");
                 if (btnCalibrateRight != null) btnCalibrateRight.setText("Calibrate Right");
+                if (tvNetworkStatus != null) tvNetworkStatus.setVisibility(View.VISIBLE);
+                updateConnectButtonState();
             } else if (newState == STATE_HOME) {
                 llHome.setVisibility(View.VISIBLE);
                 tvHomeMessage.setVisibility(View.GONE);
                 llHomeButtons.setVisibility(View.VISIBLE);
                 btnConnect.setText("Disconnect");
+                btnConnect.setEnabled(true); // always allow disconnect regardless of network state
                 btnPowerOff.setEnabled(true);
+                if (tvNetworkStatus != null) tvNetworkStatus.setVisibility(View.GONE);
             } else if (newState == STATE_RAW_RECORDING) llRawRecording.setVisibility(View.VISIBLE);
             else if (newState == STATE_TENNIS_MENU) llTennisMenu.setVisibility(View.VISIBLE);
             else if (newState == STATE_ACTIVE_TENNIS) llActiveTennis.setVisibility(View.VISIBLE);
@@ -461,6 +482,24 @@ public class MainActivity extends AppCompatActivity {
             if (statusPair == null) return;
             String status = statusPair.first;
             String message = statusPair.second;
+
+            if ("WIFI_LOST".equals(status)) {
+                // Show overlay only while we have an active connection; ignore spurious callbacks.
+                if (isConnected) {
+                    FileLogger.log(this, "WiFi lost while connected. Showing disconnect overlay.");
+                    showDisconnectOverlay();
+                }
+                return;
+            }
+
+            if ("WIFI_RESTORED".equals(status)) {
+                // Reset isConnected so the upcoming "Connected" message from the re-established
+                // socket triggers GET_SYSTEM_STATE and restores the UI to the correct state.
+                FileLogger.log(this, "WiFi restored. Resetting isConnected for state re-query.");
+                isConnected = false;
+                hideDisconnectOverlay();
+                return;
+            }
 
             if ("TRACK_EVENT".equals(status)) {
                 appendToTrackingLog(message);
@@ -481,7 +520,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if ("TRACK_TELEMETRY".equals(status)) {
-                tvLiveTelemetry.setText(message);
+                if (tvLiveTelemetry != null) tvLiveTelemetry.setText(message);
                 return;
             }
 
@@ -504,6 +543,7 @@ public class MainActivity extends AppCompatActivity {
             if ("Connected".equals(status)) {
                 if (!isConnected) {
                     isConnected = true;
+                    hideDisconnectOverlay();
                     switchState(STATE_HOME);
                     mainHandler.postDelayed(() -> {
                         sendCommand(buildSetTimeCommand());
@@ -531,7 +571,7 @@ public class MainActivity extends AppCompatActivity {
                 isLeftCalibrated = false;
                 isRightCalibrated = false;
                 updateTennisModeButtonsState();
-                
+                hideDisconnectOverlay();
                 switchState(STATE_DISCONNECTED);
             }
         });
@@ -777,38 +817,45 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void handleSystemState(String data) {
-        mainHandler.post(() -> {
-            String[] parts = data.split(",");
-            boolean serverTracking = false;
-            boolean serverRecording = false;
-            String serverMode = "";
-
-            for (String part : parts) {
-                String[] pair = part.split("=");
-                if (pair.length == 2) {
-                    if ("TRACKING".equals(pair[0])) serverTracking = "1".equals(pair[1]);
-                    if ("RECORDING".equals(pair[0])) serverRecording = "1".equals(pair[1]);
-                    if ("MODE".equals(pair[0])) serverMode = pair[1];
-                }
+        // Parse synchronously so any button press happening after this call sees correct flags.
+        // This avoids a race where the user presses the Start/Stop button before the
+        // mainHandler.post() below has run and updated isTracking.
+        String[] parts = data.split(",");
+        boolean serverTracking = false;
+        boolean serverRecording = false;
+        String serverMode = "";
+        for (String part : parts) {
+            String[] pair = part.split("=");
+            if (pair.length == 2) {
+                if ("TRACKING".equals(pair[0])) serverTracking = "1".equals(pair[1]);
+                if ("RECORDING".equals(pair[0])) serverRecording = "1".equals(pair[1]);
+                if ("MODE".equals(pair[0])) serverMode = pair[1];
             }
+        }
+        // Overwrite Android local state immediately (we're already on the main thread
+        // via the LiveData observer, so this is safe and takes effect before any pending
+        // button-click handler that may be queued).
+        CommunicationService.isTracking = serverTracking;
+        CommunicationService.isRecording = serverRecording;
 
-            // Forcefully overwrite Android's local state variables with the Server's Truth
-            CommunicationService.isTracking = serverTracking;
-            CommunicationService.isRecording = serverRecording;
+        final boolean fServerTracking = serverTracking;
+        final boolean fServerRecording = serverRecording;
+        final String fServerMode = serverMode;
 
+        mainHandler.post(() -> {
             // Route the UI to match the physical hardware state
-            if (serverTracking && !serverMode.isEmpty() && !"NONE".equals(serverMode)) {
-                CommunicationService.activeTennisMode = serverMode;
-                
-                String title = serverMode;
-                if (MODE_SINGLES.equals(serverMode)) title = "Singles Match";
-                else if (MODE_DOUBLES.equals(serverMode)) title = "Doubles Match";
-                else if (MODE_SERVE_PRACTICE.equals(serverMode)) title = "Serve Practice";
-                else if (MODE_RALLY_PRACTICE.equals(serverMode)) title = "Rally Practice";
-                
-                startTennisModeUI(serverMode, title);
+            if (fServerTracking && !fServerMode.isEmpty() && !"NONE".equals(fServerMode)) {
+                CommunicationService.activeTennisMode = fServerMode;
+
+                String title = fServerMode;
+                if (MODE_SINGLES.equals(fServerMode)) title = "Singles Match";
+                else if (MODE_DOUBLES.equals(fServerMode)) title = "Doubles Match";
+                else if (MODE_SERVE_PRACTICE.equals(fServerMode)) title = "Serve Practice";
+                else if (MODE_RALLY_PRACTICE.equals(fServerMode)) title = "Rally Practice";
+
+                startTennisModeUI(fServerMode, title);
                 updateTrackingButtons(true);
-            } else if (serverRecording) {
+            } else if (fServerRecording) {
                 switchState(STATE_RAW_RECORDING);
                 updateRecordingButtons(true);
             } else {
@@ -879,6 +926,27 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void showDisconnectOverlay() {
+        mainHandler.post(() -> {
+            if (llDisconnectOverlay == null) return;
+            llDisconnectOverlay.setVisibility(View.VISIBLE);
+            // Wire the escape button each time the overlay is shown.
+            Button btnOverlayDisconnect = llDisconnectOverlay.findViewById(R.id.btnOverlayDisconnect);
+            if (btnOverlayDisconnect != null) {
+                btnOverlayDisconnect.setOnClickListener(v -> {
+                    FileLogger.log(MainActivity.this, "User tapped Disconnect on overlay — cancelling grace period.");
+                    disconnectFromServer();
+                });
+            }
+        });
+    }
+
+    private void hideDisconnectOverlay() {
+        mainHandler.post(() -> {
+            if (llDisconnectOverlay != null) llDisconnectOverlay.setVisibility(View.GONE);
+        });
+    }
+
     private void updateRecordingIndicator() {
         if (ivRecordingIndicator == null) return;
         boolean isServePractice = MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode);
@@ -920,7 +988,19 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateTrackingButtons(boolean active) {
         mainHandler.post(() -> {
-            btnStartTracking.setText(active ? "Stop" : "Start");
+            String newLabel = active ? "Stop" : "Start";
+            String oldLabel = btnStartTracking.getText().toString();
+            if (!newLabel.equals(oldLabel)) {
+                FileLogger.log(MainActivity.this, "Tracking button: '" + oldLabel + "' → '" + newLabel
+                        + "' (active=" + active + " mode=" + CommunicationService.activeTennisMode + ")");
+            }
+            btnStartTracking.setText(newLabel);
+            // Tint: green when showing "Start" (safe to press), red when showing "Stop" (tracking live).
+            int tintColor = active
+                    ? android.graphics.Color.parseColor("#FF1744")  // red = tracking active
+                    : android.graphics.Color.parseColor("#00C853"); // green = ready to start
+            btnStartTracking.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(tintColor));
             btnBack.setEnabled(!active);
         });
     }
@@ -970,6 +1050,7 @@ public class MainActivity extends AppCompatActivity {
         CommunicationService.isRecording = false;
         updateTrackingButtons(false);
         updateRecordingButtons(false);
+        hideDisconnectOverlay();
         switchState(STATE_DISCONNECTED);
     }
 
@@ -1035,6 +1116,60 @@ public class MainActivity extends AppCompatActivity {
         if (currentState == STATE_ACTIVE_TENNIS && !CommunicationService.isTracking) switchState(STATE_TENNIS_MENU);
         else if ((currentState == STATE_RAW_RECORDING || currentState == STATE_TENNIS_MENU) && !CommunicationService.isRecording) switchState(STATE_HOME);
         else super.onBackPressed();
+    }
+
+    /**
+     * Checks whether the phone is on the same subnet as the configured server, then
+     * enables or disables the Connect button and updates the network status indicator.
+     * Only has effect in STATE_DISCONNECTED; ignored when already connected.
+     */
+    private void updateConnectButtonState() {
+        if (currentState != STATE_DISCONNECTED) return;
+        String serverAddress = getServerAddress();
+        boolean onServerNet = CommunicationService.isOnServerNetwork(connectivityManager, serverAddress);
+        btnConnect.setEnabled(onServerNet);
+        if (tvNetworkStatus != null) {
+            if (onServerNet) {
+                tvNetworkStatus.setText("● On server network (" + serverAddress + ")");
+                tvNetworkStatus.setTextColor(android.graphics.Color.parseColor("#00C853")); // green
+            } else {
+                tvNetworkStatus.setText("● Not on server network (" + serverAddress + ")");
+                tvNetworkStatus.setTextColor(android.graphics.Color.parseColor("#FF6D00")); // orange
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-check network immediately (server IP may have changed in Settings).
+        updateConnectButtonState();
+        // Register a lightweight callback to react to network switches in real time.
+        mainActivityNetworkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(@NonNull Network network) {
+                mainHandler.post(() -> updateConnectButtonState());
+            }
+            @Override
+            public void onLost(@NonNull Network network) {
+                mainHandler.post(() -> updateConnectButtonState());
+            }
+            @Override
+            public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities caps) {
+                mainHandler.post(() -> updateConnectButtonState());
+            }
+        };
+        connectivityManager.registerNetworkCallback(
+                new NetworkRequest.Builder().build(), mainActivityNetworkCallback);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mainActivityNetworkCallback != null) {
+            try { connectivityManager.unregisterNetworkCallback(mainActivityNetworkCallback); } catch (Exception ignored) { }
+            mainActivityNetworkCallback = null;
+        }
     }
 
     @Override
