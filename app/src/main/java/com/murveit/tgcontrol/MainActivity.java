@@ -95,9 +95,6 @@ public class MainActivity extends AppCompatActivity {
     // --- Algorithmic Constants for Auditory Feedback ---
     private static final int BEEP_VOLUME_MAX = 100;
     private static final int HAPPY_BEEP_DURATION_MS = 150;
-    private static final String TTS_TEXT_FAULT = "Fault";
-    private static final String TTS_TEXT_LET = "Let";
-    private static final long MPH_COOLDOWN_MS = 60000;
 
     // --- Algorithmic Constants for Client-Side Histogram Calculation ---
     private static final int HISTOGRAM_PIXEL_STRIDE = 5;
@@ -125,9 +122,6 @@ public class MainActivity extends AppCompatActivity {
     // Tracking active calibration states for UI locking
     private boolean isLeftCalibrated = false;
     private boolean isRightCalibrated = false;
-
-    // Tracks the last time the full "miles per hour" suffix was spoken
-    private long lastSpokenMphTimeMs = 0;
 
     private Button btnBack, btnConnect, btnDebugAudio;
     private ImageButton btnPowerOff, btnSettings;
@@ -178,6 +172,7 @@ public class MainActivity extends AppCompatActivity {
         mainHandler = new Handler(Looper.getMainLooper());
         
         // Initialize Audio Engines
+        toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, BEEP_VOLUME_MAX);
         textToSpeech = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech.setLanguage(Locale.US);
@@ -185,6 +180,9 @@ public class MainActivity extends AppCompatActivity {
                 // Initialize the fast speech engine cache
                 fastSpeechEngine = new FastSpeechEngine(MainActivity.this, textToSpeech);
                 fastSpeechEngine.initializeCache();
+                // Register for early audio: speech fires from the socket-reader background thread
+                // to bypass the ~194ms LiveData→UI-thread scheduling lag.
+                CommunicationService.setEarlyAudioEngine(fastSpeechEngine);
             }
         });
         
@@ -686,37 +684,38 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
-                // 2. Play Audio Feedback
+                // 2. Audio Feedback
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
                 boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
                 boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
                 boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
 
-                if (fastSpeechEngine != null) {
-                    if ("In".equalsIgnoreCase(callStr)) {
-                        if (speakMph) {
-                            int mphInt = (int) Math.round(mph);
-                            String ttsMphStr;
-                            long currentTime = System.currentTimeMillis();
-                            if (currentTime - lastSpokenMphTimeMs > MPH_COOLDOWN_MS) {
-                                ttsMphStr = mphInt + " miles per hour";
-                                lastSpokenMphTimeMs = currentTime;
-                            } else {
-                                ttsMphStr = String.valueOf(mphInt);
-                            }
-                            fastSpeechEngine.speak(ttsMphStr);
-                        } else if (playBeep && toneGenerator != null) {
-                            toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
+                // Speech is fired early from tryPlayEarlyAudio() on the network background thread.
+                // Fall back to here for the debug button and any path that bypasses the network,
+                // since those never trigger tryPlayEarlyAudio(). Skip if early audio already fired.
+                boolean earlyAudioHandled =
+                        (System.currentTimeMillis() - CommunicationService.lastEarlyAudioFiredMs) < 500;
+                if (!earlyAudioHandled && fastSpeechEngine != null) {
+                    if ("In".equalsIgnoreCase(callStr) && speakMph) {
+                        int mphInt = (int) Math.round(mph);
+                        long now = System.currentTimeMillis();
+                        String ttsMphStr;
+                        if (now - CommunicationService.lastEarlySpokenMphTimeMs > CommunicationService.EARLY_AUDIO_MPH_COOLDOWN_MS) {
+                            ttsMphStr = mphInt + " miles per hour";
+                            CommunicationService.lastEarlySpokenMphTimeMs = now;
+                        } else {
+                            ttsMphStr = String.valueOf(mphInt);
                         }
-                    } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
-                        if (playVoice) {
-                            fastSpeechEngine.speak(TTS_TEXT_FAULT);
-                        }
-                    } else if ("Let".equalsIgnoreCase(callStr)) {
-                        if (playVoice) {
-                            fastSpeechEngine.speak(TTS_TEXT_LET);
-                        }
+                        fastSpeechEngine.speak(ttsMphStr);
+                    } else if (("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) && playVoice) {
+                        fastSpeechEngine.speak("Fault");
+                    } else if ("Let".equalsIgnoreCase(callStr) && playVoice) {
+                        fastSpeechEngine.speak("Let");
                     }
+                }
+                // Beep for "In" (mutually exclusive with speech, stays on main thread)
+                if (!speakMph && playBeep && toneGenerator != null && "In".equalsIgnoreCase(callStr)) {
+                    toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
                 }
             }
 
@@ -1040,6 +1039,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        // Deregister early audio so the background thread doesn't play audio with no visible UI
+        CommunicationService.setEarlyAudioEngine(null);
         if (textToSpeech != null) {
             textToSpeech.stop();
             textToSpeech.shutdown();

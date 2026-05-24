@@ -27,6 +27,9 @@ import androidx.core.app.NotificationCompat;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
+import android.content.SharedPreferences;
+import android.preference.PreferenceManager;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -89,6 +92,21 @@ public class CommunicationService extends Service {
     public static boolean isTracking = false;
     public static String activeTennisMode = "SINGLES";
     public static String activeTennisTitle = "Singles Match";
+
+    // --- Early audio: fires speech from the socket-reader thread, bypassing the 194ms UI-thread
+    //     scheduling lag. Nulled on Activity destroy so no audio plays with no visible screen. ---
+    private static volatile FastSpeechEngine earlyAudioEngine = null;
+    // Tracks the last time the "miles per hour" suffix was spoken; avoids saying it every serve.
+    // Package-private so the main-thread fallback in MainActivity can share the same tracker.
+    static volatile long lastEarlySpokenMphTimeMs = 0;
+    static final long EARLY_AUDIO_MPH_COOLDOWN_MS = 60000;
+    // Set to currentTimeMillis() when tryPlayEarlyAudio fires so processTrackEventJson() can
+    // detect that early audio already handled the event and skip its fallback speech call.
+    static volatile long lastEarlyAudioFiredMs = 0;
+
+    public static void setEarlyAudioEngine(FastSpeechEngine engine) {
+        earlyAudioEngine = engine;
+    }
 
     // --- LiveData for UI communication ---
     private static final MutableLiveData<Pair<String, String>> statusData = new MutableLiveData<>();
@@ -366,6 +384,12 @@ public class CommunicationService extends Service {
                             } else if (serverMessage.startsWith("STATUS:")) {
                                 String status = serverMessage.substring("STATUS:".length()).trim();
                                 statusData.postValue(new Pair<>(null, status));
+                            } else if (serverMessage.startsWith("TRACK_EVENT_JSON:")) {
+                                // Fire speech audio immediately on this background thread to bypass
+                                // the ~194ms LiveData→UI-thread scheduling lag.
+                                String jsonStr = serverMessage.substring("TRACK_EVENT_JSON:".length()).trim();
+                                tryPlayEarlyAudio(jsonStr);
+                                statusData.postValue(new Pair<>("TRACK_EVENT_JSON", jsonStr));
                             } else {
                                 // For all other text messages, just post them to the UI
                                 String[] parts = serverMessage.split(":", 2);
@@ -399,6 +423,51 @@ public class CommunicationService extends Service {
             }
         });
         communicationThread.start();
+    }
+
+    private void tryPlayEarlyAudio(String jsonStr) {
+        FastSpeechEngine engine = earlyAudioEngine;
+        if (engine == null) return;
+        if (!"SERVE_PRACTICE".equals(activeTennisMode)) return;
+
+        try {
+            org.json.JSONObject json = new org.json.JSONObject(jsonStr);
+            String callStr = json.optString("call_str", "").trim();
+            double mph = json.optDouble("speed_mph", 0.0);
+
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+            boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
+
+            if ("In".equalsIgnoreCase(callStr)) {
+                if (speakMph) {
+                    int mphInt = (int) Math.round(mph);
+                    String ttsMphStr;
+                    long now = System.currentTimeMillis();
+                    if (now - lastEarlySpokenMphTimeMs > EARLY_AUDIO_MPH_COOLDOWN_MS) {
+                        ttsMphStr = mphInt + " miles per hour";
+                        lastEarlySpokenMphTimeMs = now;
+                    } else {
+                        ttsMphStr = String.valueOf(mphInt);
+                    }
+                    lastEarlyAudioFiredMs = System.currentTimeMillis();
+                    engine.speak(ttsMphStr);
+                }
+                // Beep for "In" (when speakMph=false) stays on the main thread via toneGenerator
+            } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+                if (playVoice) {
+                    lastEarlyAudioFiredMs = System.currentTimeMillis();
+                    engine.speak("Fault");
+                }
+            } else if ("Let".equalsIgnoreCase(callStr)) {
+                if (playVoice) {
+                    lastEarlyAudioFiredMs = System.currentTimeMillis();
+                    engine.speak("Let");
+                }
+            }
+        } catch (Exception e) {
+            FileLogger.log(this, "Early audio error", e);
+        }
     }
 
     private void sendCommand(String command) {
