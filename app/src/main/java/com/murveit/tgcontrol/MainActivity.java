@@ -156,6 +156,10 @@ public class MainActivity extends AppCompatActivity {
     private int totalServeCount = 0;
     private int inServeCount = 0;
     private double sumInMph = 0.0;
+    private boolean sessionRecording = false;
+
+    // Recording indicator icon (right side of title bar)
+    private ImageView ivRecordingIndicator;
     
     // Hardware Audio Engines
     private TextToSpeech textToSpeech;
@@ -260,6 +264,7 @@ public class MainActivity extends AppCompatActivity {
         tvAvgMph = findViewById(R.id.tvAvgMph);
         tvLastServe = findViewById(R.id.tvLastServe);
         serveScatterView = findViewById(R.id.serveScatterView);
+        ivRecordingIndicator = findViewById(R.id.ivRecordingIndicator);
         
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         if (cbRecordSession != null) {
@@ -461,6 +466,14 @@ public class MainActivity extends AppCompatActivity {
 
             if ("TRACK_EVENT".equals(status)) {
                 appendToTrackingLog(message);
+                // When server signals readiness in Serve Practice, update the plot status lines
+                if (message != null && message.endsWith(" Active") &&
+                        MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
+                    mainHandler.post(() -> {
+                        if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+                        if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+                    });
+                }
                 return;
             }
 
@@ -836,28 +849,48 @@ public class MainActivity extends AppCompatActivity {
 
     private void toggleTracking() {
         if (!CommunicationService.isTracking) {
-            FileLogger.log(this, "Start tracking pressed");
+            sessionRecording = cbRecordSession != null && cbRecordSession.isChecked();
+            FileLogger.log(this, "Start tracking pressed: mode=" + CommunicationService.activeTennisMode
+                    + " recording=" + sessionRecording);
             CommunicationService.isTracking = true;
             updateTrackingButtons(true);
             tvTrackingLog.setText("");
             tvLiveTelemetry.setText(""); // Erase 1s stats line at startup
-            
+
             // Clear tracking visualization data specific to this session
             serveImpacts.clear();
             totalServeCount = 0;
             inServeCount = 0;
             sumInMph = 0.0;
-            if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+            // Show "Spinning up..." immediately in both plot status lines;
+            // they will update to real values once the server signals Active.
+            if (tvAvgMph != null) tvAvgMph.setText("Spinning up...");
             if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
-            if (tvLastServe != null) tvLastServe.setText("Ready for serves");
-            
+            if (tvLastServe != null) tvLastServe.setText("");
+
             sendCommand(buildStartTrackingCommand(CommunicationService.activeTennisMode));
+            updateRecordingIndicator();
         } else {
             FileLogger.log(this, "Stop tracking pressed");
             CommunicationService.isTracking = false;
             sendCommand(CMD_STOP_TRACKING);
             updateTrackingButtons(false);
             tvTrackingLog.append("\n--- Stopped ---");
+            updateRecordingIndicator();
+        }
+    }
+
+    private void updateRecordingIndicator() {
+        if (ivRecordingIndicator == null) return;
+        boolean isServePractice = MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode);
+        if (isServePractice && CommunicationService.isTracking) {
+            ivRecordingIndicator.setVisibility(View.VISIBLE);
+            int color = sessionRecording
+                    ? android.graphics.Color.parseColor("#FF1744")  // red = recording
+                    : android.graphics.Color.parseColor("#808080"); // gray = not recording
+            ivRecordingIndicator.setColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN);
+        } else {
+            ivRecordingIndicator.setVisibility(View.INVISIBLE);
         }
     }
 

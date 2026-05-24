@@ -62,8 +62,8 @@ import java.util.List;
 public class CalibrationActivity extends AppCompatActivity {
     
     // --- Algorithmic Constants ---
-    private static final float TCP_SCALE_FACTOR = 0.5f; // Forces Jetson to downsample 4K to 1080p
-    private static final float STRONG_ZOOM_MULTIPLIER = 12.0f; // Target scale multiplier for single tap
+    private static final float TCP_SCALE_FACTOR = 1.0f; // 0.5 would force the server to downsample 4K to 1080p
+    private static final float STRONG_ZOOM_MULTIPLIER = 30.0f; // Target scale multiplier for single tap
     
     private static final int STATE_LOADING = 0;
     private static final int STATE_TARGET_FAR_OUT = 1;
