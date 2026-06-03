@@ -243,6 +243,21 @@
                 android:text="Auto White Balance Lock" />
 
             <CheckBox
+                android:id="@+id/cbNanoAudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="Nano Audio (speak calls from Nano speaker)" />
+
+            <CheckBox
+                android:id="@+id/cbNanoAudioSpeakMph"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:paddingStart="24dp"
+                android:text="Nano Audio: speak serve MPH" />
+
+            <CheckBox
                 android:id="@+id/cbVoiceCalls"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

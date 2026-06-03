@@ -61,6 +61,9 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_VOICE_CALLS = "voice_calls";
     public static final String KEY_BEEP_IN = "beep_in";
     public static final String KEY_SPEAK_MPH = "speak_mph";
+    // When enabled, the Nano speaks calls directly via USB audio; app audio is suppressed.
+    public static final String KEY_NANO_AUDIO = "nano_audio";
+    public static final String KEY_NANO_AUDIO_SPEAK_MPH = "nano_audio_speak_mph";
     // Represents the user preference to enable verbose algorithmic tracking logs on the server
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
     // Bypass the 12-hour TTL for offline or home testing
@@ -76,6 +79,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Spinner spnConnectionTarget;
     private CheckBox cbAeLock;
     private CheckBox cbAwbLock;
+    private CheckBox cbNanoAudio;
+    private CheckBox cbNanoAudioSpeakMph;
     private CheckBox cbVoiceCalls;
     private CheckBox cbBeepIn;
     private CheckBox cbSpeakMph;
@@ -106,6 +111,8 @@ public class SettingsActivity extends AppCompatActivity {
         spnConnectionTarget = findViewById(R.id.spnConnectionTarget);
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
+        cbNanoAudio = findViewById(R.id.cbNanoAudio);
+        cbNanoAudioSpeakMph = findViewById(R.id.cbNanoAudioSpeakMph);
         cbVoiceCalls = findViewById(R.id.cbVoiceCalls);
         cbBeepIn = findViewById(R.id.cbBeepIn);
         cbSpeakMph = findViewById(R.id.cbSpeakMph);
@@ -203,6 +210,8 @@ public class SettingsActivity extends AppCompatActivity {
         
         if (cbAeLock != null) cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         if (cbAwbLock != null) cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
+        if (cbNanoAudio != null) cbNanoAudio.setChecked(prefs.getBoolean(KEY_NANO_AUDIO, false));
+        if (cbNanoAudioSpeakMph != null) cbNanoAudioSpeakMph.setChecked(prefs.getBoolean(KEY_NANO_AUDIO_SPEAK_MPH, true));
         if (cbVoiceCalls != null) cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
         if (cbBeepIn != null) cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
         if (cbSpeakMph != null) cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
@@ -234,6 +243,8 @@ public class SettingsActivity extends AppCompatActivity {
         }
         if (cbAeLock != null) editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
         if (cbAwbLock != null) editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
+        if (cbNanoAudio != null) editor.putBoolean(KEY_NANO_AUDIO, cbNanoAudio.isChecked());
+        if (cbNanoAudioSpeakMph != null) editor.putBoolean(KEY_NANO_AUDIO_SPEAK_MPH, cbNanoAudioSpeakMph.isChecked());
         if (cbVoiceCalls != null) editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
         if (cbBeepIn != null) editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
         if (cbSpeakMph != null) editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());

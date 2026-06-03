@@ -117,6 +117,8 @@ public class CommunicationService extends Service {
     // Set to currentTimeMillis() when tryPlayEarlyAudio fires so processTrackEventJson() can
     // detect that early audio already handled the event and skip its fallback speech call.
     static volatile long lastEarlyAudioFiredMs = 0;
+    // True when the Nano is handling audio output directly; app audio is suppressed.
+    static volatile boolean nanoAudioActive = false;
 
     public static void setEarlyAudioEngine(FastSpeechEngine engine) {
         earlyAudioEngine = engine;
@@ -589,6 +591,7 @@ public class CommunicationService extends Service {
     }
 
     private void tryPlayEarlyAudio(String jsonStr) {
+        if (nanoAudioActive) return;  // Nano is speaking; suppress app audio.
         FastSpeechEngine engine = earlyAudioEngine;
         if (engine == null) return;
         if (!"SERVE_PRACTICE".equals(activeTennisMode)) return;

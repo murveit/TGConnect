@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
     
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
-    private static final String TG_CHICO_HOST = "192.168.86.43";
+    private static final String TG_CHICO_HOST = "192.168.86.40";
     private static final String LOCAL_HOST = "localhost";
 
     private static final int REQUEST_CODE_POST_NOTIFICATIONS = 101;
@@ -168,6 +168,21 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvNetworkStatus;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback mainActivityNetworkCallback;
+
+    // Sends SET_NANO_AUDIO to the Nano immediately when the preference changes while tracking.
+    private final SharedPreferences.OnSharedPreferenceChangeListener nanoAudioPrefListener =
+            (prefs, key) -> {
+                if (SettingsActivity.KEY_NANO_AUDIO.equals(key) ||
+                        SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH.equals(key)) {
+                    if (CommunicationService.isTracking) {
+                        boolean enabled = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false);
+                        boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH, true);
+                        sendCommand("SET_NANO_AUDIO:" + (enabled ? "1" : "0")
+                                + ",SPEAK_MPH=" + (speakMph ? "1" : "0") + "\n");
+                        CommunicationService.nanoAudioActive = enabled;
+                    }
+                }
+            };
     
     // Hardware Audio Engines
     private TextToSpeech textToSpeech;
@@ -534,6 +549,16 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
+            if ("AUDIO_STATUS".equals(status)) {
+                // Nano reports whether its USB audio is ready: ok, no_usb_device, missing_files:..., etc.
+                final String audioStatus = message;
+                mainHandler.post(() -> {
+                    String display = "Nano audio: " + (audioStatus != null ? audioStatus : "unknown");
+                    appendToTrackingLog(display);
+                });
+                return;
+            }
+
             if ("CALIBRATION_SAVED".equals(message)) {
                 sendCommand(buildGetCalibrationStatusCommand());
             }
@@ -732,10 +757,11 @@ public class MainActivity extends AppCompatActivity {
 
                 // Speech is fired early from tryPlayEarlyAudio() on the network background thread.
                 // Fall back to here for the debug button and any path that bypasses the network,
-                // since those never trigger tryPlayEarlyAudio(). Skip if early audio already fired.
+                // since those never trigger tryPlayEarlyAudio(). Skip if early audio already fired,
+                // or if the Nano is handling audio output directly.
                 boolean earlyAudioHandled =
                         (System.currentTimeMillis() - CommunicationService.lastEarlyAudioFiredMs) < 500;
-                if (!earlyAudioHandled && fastSpeechEngine != null) {
+                if (!earlyAudioHandled && !CommunicationService.nanoAudioActive && fastSpeechEngine != null) {
                     if ("In".equalsIgnoreCase(callStr) && speakMph) {
                         int mphInt = (int) Math.round(mph);
                         long now = System.currentTimeMillis();
@@ -754,7 +780,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 // Beep for "In" (mutually exclusive with speech, stays on main thread)
-                if (!speakMph && playBeep && toneGenerator != null && "In".equalsIgnoreCase(callStr)) {
+                if (!CommunicationService.nanoAudioActive && !speakMph && playBeep && toneGenerator != null && "In".equalsIgnoreCase(callStr)) {
                     toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
                 }
             }
@@ -830,6 +856,7 @@ public class MainActivity extends AppCompatActivity {
                 if ("TRACKING".equals(pair[0])) serverTracking = "1".equals(pair[1]);
                 if ("RECORDING".equals(pair[0])) serverRecording = "1".equals(pair[1]);
                 if ("MODE".equals(pair[0])) serverMode = pair[1];
+                if ("NANO_AUDIO".equals(pair[0])) CommunicationService.nanoAudioActive = "on".equals(pair[1]);
             }
         }
         // Overwrite Android local state immediately (we're already on the main thread
@@ -914,11 +941,14 @@ public class MainActivity extends AppCompatActivity {
             if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
             if (tvLastServe != null) tvLastServe.setText("");
 
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            CommunicationService.nanoAudioActive = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false);
             sendCommand(buildStartTrackingCommand(CommunicationService.activeTennisMode));
             updateRecordingIndicator();
         } else {
             FileLogger.log(this, "Stop tracking pressed");
             CommunicationService.isTracking = false;
+            CommunicationService.nanoAudioActive = false;
             sendCommand(CMD_STOP_TRACKING);
             updateTrackingButtons(false);
             tvTrackingLog.append("\n--- Stopped ---");
@@ -1078,6 +1108,8 @@ public class MainActivity extends AppCompatActivity {
           .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
           .append(",debug_calib=").append(prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false) ? 1 : 0)
           .append(",serve_thresh=").append(prefs.getInt(SettingsActivity.KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH))
+          .append(",nano_audio=").append(prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false) ? 1 : 0)
+          .append(",nano_audio_speak_mph=").append(prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH, true) ? 1 : 0)
           .append("\n");
         return sb.toString();
     }
@@ -1144,6 +1176,9 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         // Re-check network immediately (server IP may have changed in Settings).
         updateConnectButtonState();
+        // Live-toggle nano audio: send SET_NANO_AUDIO immediately if tracking is active.
+        PreferenceManager.getDefaultSharedPreferences(this)
+                .registerOnSharedPreferenceChangeListener(nanoAudioPrefListener);
         // Register a lightweight callback to react to network switches in real time.
         mainActivityNetworkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
@@ -1166,6 +1201,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        PreferenceManager.getDefaultSharedPreferences(this)
+                .unregisterOnSharedPreferenceChangeListener(nanoAudioPrefListener);
         if (mainActivityNetworkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(mainActivityNetworkCallback); } catch (Exception ignored) { }
             mainActivityNetworkCallback = null;
