@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
     
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
-    private static final String TG_CHICO_HOST = "192.168.86.40";
+    private static final String TG_CHICO_HOST = "192.168.86.31";
     private static final String LOCAL_HOST = "localhost";
 
     private static final int REQUEST_CODE_POST_NOTIFICATIONS = 101;

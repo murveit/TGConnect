@@ -68,6 +68,8 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
     // Bypass the 12-hour TTL for offline or home testing
     public static final String KEY_DEBUG_CALIBRATION = "debug_calibration";
+    // Use pre-captured canned images instead of live capture during calibration
+    public static final String KEY_USE_CANNED_CALIBRATION = "use_canned_calibration";
     public static final String KEY_DEBUG_AUDIO = "debug_audio";
     public static final String KEY_DET_THRESH = "det_thresh";
     public static final String KEY_SERVE_THRESH = "serve_thresh";
@@ -86,6 +88,7 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbSpeakMph;
     private CheckBox cbEnableLogging;
     private CheckBox cbDebugCalibration;
+    private CheckBox cbUseCannedCalibration;
     private CheckBox cbDebugAudio;
     private EditText etExposureLow;
     private EditText etExposureHigh;
@@ -118,6 +121,7 @@ public class SettingsActivity extends AppCompatActivity {
         cbSpeakMph = findViewById(R.id.cbSpeakMph);
         cbEnableLogging = findViewById(R.id.cbEnableLogging);
         cbDebugCalibration = findViewById(R.id.cbDebugCalibration);
+        cbUseCannedCalibration = findViewById(R.id.cbUseCannedCalibration);
         cbDebugAudio = findViewById(R.id.cbDebugAudio);
 
         etExposureLow = findViewById(R.id.etExposureLow);
@@ -134,6 +138,27 @@ public class SettingsActivity extends AppCompatActivity {
         etServeThresh = findViewById(R.id.etServeThresh);
         sbExpComp = findViewById(R.id.sbExpComp);
         tvExpCompLabel = findViewById(R.id.tvExpCompLabel);
+
+        Button btnTestAudio = findViewById(R.id.btnTestAudio);
+        if (btnTestAudio != null) {
+            btnTestAudio.setEnabled(CommunicationService.isServerConnected && !CommunicationService.isTracking);
+            btnTestAudio.setOnClickListener(v -> sendCommand("TEST_AUDIO\n"));
+        }
+
+        TextView tvAudioStatus = findViewById(R.id.tvAudioStatus);
+        if (tvAudioStatus != null) {
+            String last = CommunicationService.lastAudioStatus;
+            tvAudioStatus.setText("Nano audio: " + (last != null ? last : "unknown"));
+            CommunicationService.getStatusData().observe(this, pair -> {
+                if (pair != null && "AUDIO_STATUS".equals(pair.first)) {
+                    tvAudioStatus.setText("Nano audio: " + pair.second);
+                }
+                // Re-evaluate button state whenever connection or tracking status may have changed.
+                if (btnTestAudio != null) {
+                    btnTestAudio.setEnabled(CommunicationService.isServerConnected && !CommunicationService.isTracking);
+                }
+            });
+        }
 
         Button btnClearLogs = findViewById(R.id.btnClearLogs);
         if (btnClearLogs != null) {
@@ -217,6 +242,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbSpeakMph != null) cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
         if (cbEnableLogging != null) cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
         if (cbDebugCalibration != null) cbDebugCalibration.setChecked(prefs.getBoolean(KEY_DEBUG_CALIBRATION, false));
+        if (cbUseCannedCalibration != null) cbUseCannedCalibration.setChecked(prefs.getBoolean(KEY_USE_CANNED_CALIBRATION, false));
         if (cbDebugAudio != null) cbDebugAudio.setChecked(prefs.getBoolean(KEY_DEBUG_AUDIO, false));
 
         if (etExposureLow != null) etExposureLow.setText(String.valueOf(prefs.getLong(KEY_EXPOSURE_LOW, 10000L)));
@@ -250,6 +276,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbSpeakMph != null) editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
         if (cbEnableLogging != null) editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
         if (cbDebugCalibration != null) editor.putBoolean(KEY_DEBUG_CALIBRATION, cbDebugCalibration.isChecked());
+        if (cbUseCannedCalibration != null) editor.putBoolean(KEY_USE_CANNED_CALIBRATION, cbUseCannedCalibration.isChecked());
         if (cbDebugAudio != null) editor.putBoolean(KEY_DEBUG_AUDIO, cbDebugAudio.isChecked());
 
         if (etExposureLow != null) {
@@ -394,5 +421,12 @@ public class SettingsActivity extends AppCompatActivity {
     public boolean onSupportNavigateUp() {
         onBackPressed();
         return true;
+    }
+
+    private void sendCommand(String command) {
+        android.content.Intent intent = new android.content.Intent(this, CommunicationService.class);
+        intent.setAction(CommunicationService.ACTION_SEND_COMMAND);
+        intent.putExtra(CommunicationService.EXTRA_COMMAND, command);
+        startService(intent);
     }
 }

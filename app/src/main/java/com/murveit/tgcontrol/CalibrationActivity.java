@@ -299,7 +299,8 @@ public class CalibrationActivity extends AppCompatActivity {
           .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
           .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
-          .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50));
+          .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
+          .append(",use_canned=").append(prefs.getBoolean(SettingsActivity.KEY_USE_CANNED_CALIBRATION, false) ? 1 : 0);
         return sb.toString();
     }
 

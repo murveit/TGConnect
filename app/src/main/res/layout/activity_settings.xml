@@ -295,6 +295,13 @@
                 android:text="Use Debug Calibration Files" />
 
             <CheckBox
+                android:id="@+id/cbUseCannedCalibration"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="Use Canned Calibration Image" />
+
+            <CheckBox
                 android:id="@+id/cbDebugAudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -350,23 +357,47 @@
                 android:orientation="horizontal"
                 android:gravity="center_horizontal"
                 android:layout_marginTop="16dp">
-                
+
                 <Button
                     android:id="@+id/btnClearLogs"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Clear Logs"
                     android:textAllCaps="false" />
-                    
+
                 <Space
                     android:layout_width="16dp"
                     android:layout_height="wrap_content" />
-                    
+
                 <Button
                     android:id="@+id/btnShareLogs"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Share Logs"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvAudioStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Nano audio: unknown"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_horizontal"
+                android:layout_marginTop="4dp">
+
+                <Button
+                    android:id="@+id/btnTestAudio"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Test Nano Audio"
                     android:textAllCaps="false" />
             </LinearLayout>
         </LinearLayout>

@@ -120,6 +120,9 @@ public class CommunicationService extends Service {
     // True when the Nano is handling audio output directly; app audio is suppressed.
     static volatile boolean nanoAudioActive = false;
 
+    // Last AUDIO_STATUS received from the Nano; persists across activity restarts.
+    public static volatile String lastAudioStatus = null;
+
     public static void setEarlyAudioEngine(FastSpeechEngine engine) {
         earlyAudioEngine = engine;
     }
@@ -172,13 +175,18 @@ public class CommunicationService extends Service {
         int lastDot = serverAddress.lastIndexOf('.');
         if (lastDot <= 0) return false;
         String expectedPrefix = serverAddress.substring(0, lastDot + 1);
-        Network activeNetwork = cm.getActiveNetwork();
-        if (activeNetwork == null) return false;
-        LinkProperties lp = cm.getLinkProperties(activeNetwork);
-        if (lp == null) return false;
-        for (LinkAddress la : lp.getLinkAddresses()) {
-            String addr = la.getAddress().getHostAddress();
-            if (addr != null && addr.startsWith(expectedPrefix)) return true;
+        // Check all WiFi networks, not just the active network.  When the hotspot
+        // has no internet, Android makes LTE the active network even though the
+        // phone is connected to the hotspot WiFi, so getActiveNetwork() returns LTE.
+        for (Network network : cm.getAllNetworks()) {
+            NetworkCapabilities nc = cm.getNetworkCapabilities(network);
+            if (nc == null || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+            LinkProperties lp = cm.getLinkProperties(network);
+            if (lp == null) continue;
+            for (LinkAddress la : lp.getLinkAddresses()) {
+                String addr = la.getAddress().getHostAddress();
+                if (addr != null && addr.startsWith(expectedPrefix)) return true;
+            }
         }
         return false;
     }
@@ -553,6 +561,7 @@ public class CommunicationService extends Service {
                                 String[] parts = serverMessage.split(":", 2);
                                 String status = parts.length > 1 ? parts[0] : "Server";
                                 String message = parts.length > 1 ? parts[1].trim() : serverMessage;
+                                if ("AUDIO_STATUS".equals(status)) lastAudioStatus = message;
                                 statusData.postValue(new Pair<>(status, message));
                             }
                         }
