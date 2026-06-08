@@ -59,11 +59,10 @@ public class SettingsActivity extends AppCompatActivity {
     
     // --- Audio Feedback Constants ---
     public static final String KEY_VOICE_CALLS = "voice_calls";
-    public static final String KEY_BEEP_IN = "beep_in";
-    public static final String KEY_SPEAK_MPH = "speak_mph";
+    // Unified In-serve audio mode for both phone and Nano: "mph", "beep", or "mute".
+    public static final String KEY_IN_SERVE_AUDIO = "in_serve_audio";
     // When enabled, the Nano speaks calls directly via USB audio; app audio is suppressed.
     public static final String KEY_NANO_AUDIO = "nano_audio";
-    public static final String KEY_NANO_AUDIO_SPEAK_MPH = "nano_audio_speak_mph";
     // Represents the user preference to enable verbose algorithmic tracking logs on the server
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
     // Bypass the 12-hour TTL for offline or home testing
@@ -82,11 +81,10 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbAeLock;
     private CheckBox cbAwbLock;
     private CheckBox cbNanoAudio;
-    private CheckBox cbNanoAudioSpeakMph;
     private CheckBox cbVoiceCalls;
-    private CheckBox cbBeepIn;
-    private CheckBox cbSpeakMph;
+    private android.widget.RadioGroup rgInServe;
     private CheckBox cbEnableLogging;
+    private boolean isFakeCallsActive = false;
     private CheckBox cbDebugCalibration;
     private CheckBox cbUseCannedCalibration;
     private CheckBox cbDebugAudio;
@@ -115,10 +113,8 @@ public class SettingsActivity extends AppCompatActivity {
         cbAeLock = findViewById(R.id.cbAeLock);
         cbAwbLock = findViewById(R.id.cbAwbLock);
         cbNanoAudio = findViewById(R.id.cbNanoAudio);
-        cbNanoAudioSpeakMph = findViewById(R.id.cbNanoAudioSpeakMph);
         cbVoiceCalls = findViewById(R.id.cbVoiceCalls);
-        cbBeepIn = findViewById(R.id.cbBeepIn);
-        cbSpeakMph = findViewById(R.id.cbSpeakMph);
+        rgInServe = findViewById(R.id.rgInServe);
         cbEnableLogging = findViewById(R.id.cbEnableLogging);
         cbDebugCalibration = findViewById(R.id.cbDebugCalibration);
         cbUseCannedCalibration = findViewById(R.id.cbUseCannedCalibration);
@@ -145,6 +141,16 @@ public class SettingsActivity extends AppCompatActivity {
             btnTestAudio.setOnClickListener(v -> sendCommand("TEST_AUDIO\n"));
         }
 
+        Button btnInsertFakeCalls = findViewById(R.id.btnInsertFakeCalls);
+        if (btnInsertFakeCalls != null) {
+            btnInsertFakeCalls.setEnabled(CommunicationService.isTracking);
+            btnInsertFakeCalls.setOnClickListener(v -> {
+                isFakeCallsActive = !isFakeCallsActive;
+                sendCommand("SET_AUDIO_TEST:" + (isFakeCallsActive ? "1" : "0") + "\n");
+                btnInsertFakeCalls.setText(isFakeCallsActive ? "Stop Fake Calls" : "Insert Fake Calls");
+            });
+        }
+
         TextView tvAudioStatus = findViewById(R.id.tvAudioStatus);
         if (tvAudioStatus != null) {
             String last = CommunicationService.lastAudioStatus;
@@ -153,9 +159,18 @@ public class SettingsActivity extends AppCompatActivity {
                 if (pair != null && "AUDIO_STATUS".equals(pair.first)) {
                     tvAudioStatus.setText("Nano audio: " + pair.second);
                 }
-                // Re-evaluate button state whenever connection or tracking status may have changed.
+                // Re-evaluate button states whenever connection or tracking status may have changed.
                 if (btnTestAudio != null) {
                     btnTestAudio.setEnabled(CommunicationService.isServerConnected && !CommunicationService.isTracking);
+                }
+                if (btnInsertFakeCalls != null) {
+                    boolean tracking = CommunicationService.isTracking;
+                    btnInsertFakeCalls.setEnabled(tracking);
+                    if (!tracking && isFakeCallsActive) {
+                        // Tracking stopped — reset button state
+                        isFakeCallsActive = false;
+                        btnInsertFakeCalls.setText("Insert Fake Calls");
+                    }
                 }
             });
         }
@@ -188,6 +203,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         loadSettings();
         setupSeekBarListeners();
+        setupAudioListeners();
     }
 
     private void setupNanoToSecondsWatcher(EditText editText, TextView outputTextView) {
@@ -203,16 +219,19 @@ public class SettingsActivity extends AppCompatActivity {
             @Override
             public void afterTextChanged(android.text.Editable s) {
                 if (s == null || s.length() == 0) {
-                    outputTextView.setText("0.000 s");
+                    outputTextView.setText("- s");
                     return;
                 }
                 try {
                     long nanoseconds = Long.parseLong(s.toString());
-                    double seconds = nanoseconds / 1_000_000_000.0;
-                    if (seconds > 0 && seconds < 0.001) {
-                        outputTextView.setText(String.format(java.util.Locale.US, "%.6f s", seconds));
+                    if (nanoseconds <= 0) {
+                        outputTextView.setText("- s");
+                    } else if (nanoseconds >= 1_000_000_000L) {
+                        long wholeSeconds = nanoseconds / 1_000_000_000L;
+                        outputTextView.setText(wholeSeconds + " s");
                     } else {
-                        outputTextView.setText(String.format(java.util.Locale.US, "%.3f s", seconds));
+                        long denom = Math.round(1_000_000_000.0 / nanoseconds);
+                        outputTextView.setText("1/" + denom + " s");
                     }
                 } catch (NumberFormatException e) {
                     outputTextView.setText("- s");
@@ -236,10 +255,13 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbAeLock != null) cbAeLock.setChecked(prefs.getBoolean(KEY_AE_LOCK, false));
         if (cbAwbLock != null) cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
         if (cbNanoAudio != null) cbNanoAudio.setChecked(prefs.getBoolean(KEY_NANO_AUDIO, false));
-        if (cbNanoAudioSpeakMph != null) cbNanoAudioSpeakMph.setChecked(prefs.getBoolean(KEY_NANO_AUDIO_SPEAK_MPH, true));
         if (cbVoiceCalls != null) cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
-        if (cbBeepIn != null) cbBeepIn.setChecked(prefs.getBoolean(KEY_BEEP_IN, false));
-        if (cbSpeakMph != null) cbSpeakMph.setChecked(prefs.getBoolean(KEY_SPEAK_MPH, false));
+        if (rgInServe != null) {
+            String inServeAudio = prefs.getString(KEY_IN_SERVE_AUDIO, "mute");
+            if ("mph".equals(inServeAudio))       rgInServe.check(R.id.rbInServeMph);
+            else if ("beep".equals(inServeAudio)) rgInServe.check(R.id.rbInServeBeep);
+            else                                   rgInServe.check(R.id.rbInServeMute);
+        }
         if (cbEnableLogging != null) cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
         if (cbDebugCalibration != null) cbDebugCalibration.setChecked(prefs.getBoolean(KEY_DEBUG_CALIBRATION, false));
         if (cbUseCannedCalibration != null) cbUseCannedCalibration.setChecked(prefs.getBoolean(KEY_USE_CANNED_CALIBRATION, false));
@@ -270,10 +292,14 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbAeLock != null) editor.putBoolean(KEY_AE_LOCK, cbAeLock.isChecked());
         if (cbAwbLock != null) editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
         if (cbNanoAudio != null) editor.putBoolean(KEY_NANO_AUDIO, cbNanoAudio.isChecked());
-        if (cbNanoAudioSpeakMph != null) editor.putBoolean(KEY_NANO_AUDIO_SPEAK_MPH, cbNanoAudioSpeakMph.isChecked());
         if (cbVoiceCalls != null) editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
-        if (cbBeepIn != null) editor.putBoolean(KEY_BEEP_IN, cbBeepIn.isChecked());
-        if (cbSpeakMph != null) editor.putBoolean(KEY_SPEAK_MPH, cbSpeakMph.isChecked());
+        if (rgInServe != null) {
+            String inServeAudio = "mute";
+            int checked = rgInServe.getCheckedRadioButtonId();
+            if (checked == R.id.rbInServeMph)       inServeAudio = "mph";
+            else if (checked == R.id.rbInServeBeep) inServeAudio = "beep";
+            editor.putString(KEY_IN_SERVE_AUDIO, inServeAudio);
+        }
         if (cbEnableLogging != null) editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
         if (cbDebugCalibration != null) editor.putBoolean(KEY_DEBUG_CALIBRATION, cbDebugCalibration.isChecked());
         if (cbUseCannedCalibration != null) editor.putBoolean(KEY_USE_CANNED_CALIBRATION, cbUseCannedCalibration.isChecked());
@@ -421,6 +447,35 @@ public class SettingsActivity extends AppCompatActivity {
     public boolean onSupportNavigateUp() {
         onBackPressed();
         return true;
+    }
+
+    private void sendAudioSettings() {
+        boolean nanoAudio  = cbNanoAudio != null && cbNanoAudio.isChecked();
+        boolean voiceCalls = cbVoiceCalls != null && cbVoiceCalls.isChecked();
+        String inServeAudio = "mute";
+        if (rgInServe != null) {
+            int checked = rgInServe.getCheckedRadioButtonId();
+            if (checked == R.id.rbInServeMph)       inServeAudio = "mph";
+            else if (checked == R.id.rbInServeBeep) inServeAudio = "beep";
+        }
+        // Keep the in-process flag in sync immediately; SharedPreferences are only
+        // written on onPause(), so MainActivity's pref-listener fires too late.
+        CommunicationService.nanoAudioActive = nanoAudio;
+        if (!CommunicationService.isServerConnected) return;
+        sendCommand("SET_NANO_AUDIO:" + (nanoAudio ? "1" : "0")
+                + ",voice_calls=" + (voiceCalls ? "1" : "0")
+                + ",in_serve=" + inServeAudio + "\n");
+    }
+
+    private void setupAudioListeners() {
+        // Listeners fire immediately when a control changes so the server reflects
+        // the new state without requiring a tracking restart.
+        // Set up AFTER loadSettings() to avoid spurious sends during initialisation.
+        android.widget.CompoundButton.OnCheckedChangeListener audioListener =
+                (btn, isChecked) -> sendAudioSettings();
+        if (cbNanoAudio != null)  cbNanoAudio.setOnCheckedChangeListener(audioListener);
+        if (cbVoiceCalls != null) cbVoiceCalls.setOnCheckedChangeListener(audioListener);
+        if (rgInServe != null)    rgInServe.setOnCheckedChangeListener((group, checkedId) -> sendAudioSettings());
     }
 
     private void sendCommand(String command) {

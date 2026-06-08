@@ -607,15 +607,18 @@ public class CommunicationService extends Service {
 
         try {
             org.json.JSONObject json = new org.json.JSONObject(jsonStr);
-            String callStr = json.optString("call_str", "").trim();
+            String callStr    = json.optString("call_str", "").trim();
+            String strikeType = json.optString("strike_type", "").trim();
             double mph = json.optDouble("speed_mph", 0.0);
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-            boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
-            boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
+            boolean playVoice    = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+            String inServeAudio  = prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute");
+            // Only serves use the In-serve setting; non-serve In calls are always muted.
+            boolean isServeCall  = "Serve".equalsIgnoreCase(strikeType);
 
             if ("In".equalsIgnoreCase(callStr)) {
-                if (speakMph) {
+                if (isServeCall && "mph".equals(inServeAudio) && playVoice) {
                     int mphInt = (int) Math.round(mph);
                     String ttsMphStr;
                     long now = System.currentTimeMillis();
@@ -628,7 +631,7 @@ public class CommunicationService extends Service {
                     lastEarlyAudioFiredMs = System.currentTimeMillis();
                     engine.speak(ttsMphStr);
                 }
-                // Beep for "In" (when speakMph=false) stays on the main thread via toneGenerator
+                // Beep mode stays on the main thread via toneGenerator — not handled here
             } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
                 if (playVoice) {
                     lastEarlyAudioFiredMs = System.currentTimeMillis();

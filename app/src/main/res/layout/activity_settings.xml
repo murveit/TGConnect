@@ -74,13 +74,12 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="8dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Connection Target:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
 
                 <Spinner
@@ -90,6 +89,12 @@
                     android:layout_weight="1"
                     android:layout_marginStart="16dp" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginBottom="8dp"
+                android:background="?android:attr/listDivider" />
 
             <!-- CAMERA HARDWARE CONTROLS -->
             <LinearLayout
@@ -103,15 +108,15 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Exp Low:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
 
                 <EditText
                     android:id="@+id/etExposureLow"
-                    android:layout_width="0dp"
+                    android:layout_width="110dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
                     android:inputType="number" />
 
                 <TextView
@@ -133,15 +138,15 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Exp High:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
 
                 <EditText
                     android:id="@+id/etExposureHigh"
-                    android:layout_width="0dp"
+                    android:layout_width="110dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
                     android:inputType="number" />
 
                 <TextView
@@ -152,51 +157,43 @@
                     android:text="(0.0s)" />
             </LinearLayout>
 
-            <!-- Inline Analog Gain -->
+            <!-- Analog Gain + Digital Gain on one line -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:layout_marginBottom="4dp">
-                
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Analog gain:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
-                    
+
                 <EditText
                     android:id="@+id/etGain"
-                    android:layout_width="0dp"
+                    android:layout_width="64dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
                     android:inputType="numberDecimal" />
-            </LinearLayout>
 
-            <!-- Inline Digital Gain -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="4dp">
-                
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
                     android:text="Digital gain:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
-                    
+
                 <EditText
                     android:id="@+id/etDigitalGain"
-                    android:layout_width="0dp"
+                    android:layout_width="64dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
                     android:inputType="numberDecimal" />
             </LinearLayout>
 
@@ -206,27 +203,28 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
-                
+                android:layout_marginBottom="4dp">
+
                 <TextView
                     android:id="@+id/tvExpCompLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Exp Comp: 0.0"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
-                    
+
                 <SeekBar
                     android:id="@+id/sbExpComp"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="16dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
                     android:max="16"
                     android:progress="8" />
             </LinearLayout>
 
-            <!-- COMPACTED CHECKBOXES (Hardware & Feedback) -->
+            <!-- CAMERA LOCK CHECKBOXES -->
             <CheckBox
                 android:id="@+id/cbAeLock"
                 android:layout_width="match_parent"
@@ -242,20 +240,13 @@
                 android:minHeight="32dp"
                 android:text="Auto White Balance Lock" />
 
-            <CheckBox
-                android:id="@+id/cbNanoAudio"
+            <!-- AUDIO SECTION -->
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="32dp"
-                android:text="Nano Audio (speak calls from Nano speaker)" />
-
-            <CheckBox
-                android:id="@+id/cbNanoAudioSpeakMph"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="32dp"
-                android:paddingStart="24dp"
-                android:text="Nano Audio: speak serve MPH" />
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="?android:attr/listDivider" />
 
             <CheckBox
                 android:id="@+id/cbVoiceCalls"
@@ -265,18 +256,59 @@
                 android:text="Voice calls (Out, Fault, Let)" />
 
             <CheckBox
-                android:id="@+id/cbBeepIn"
+                android:id="@+id/cbNanoAudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="32dp"
-                android:text="Beep on 'In' serves" />
+                android:text="Nano Audio" />
 
-            <CheckBox
-                android:id="@+id/cbSpeakMph"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="32dp"
-                android:text="Speak serve MPH (Serve Practice)" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="In Serves:"
+                    android:textColor="?android:attr/textColorPrimary" />
+
+                <RadioGroup
+                    android:id="@+id/rgInServe"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginStart="8dp">
+
+                    <RadioButton
+                        android:id="@+id/rbInServeMph"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="MPH" />
+
+                    <RadioButton
+                        android:id="@+id/rbInServeBeep"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Beep" />
+
+                    <RadioButton
+                        android:id="@+id/rbInServeMute"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Mute" />
+
+                </RadioGroup>
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
+                android:background="?android:attr/listDivider" />
 
             <CheckBox
                 android:id="@+id/cbEnableLogging"
@@ -308,29 +340,33 @@
                 android:minHeight="32dp"
                 android:text="Debug Audio" />
 
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="?android:attr/listDivider" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="16dp">
-                
+                android:gravity="center_vertical">
+
                 <TextView
                     android:id="@+id/tvDetThreshLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Pruning:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
                     
                 <EditText
                     android:id="@+id/etDetThresh"
-                    android:layout_width="0dp"
+                    android:layout_width="48dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:layout_marginStart="8dp"
-                    android:inputType="number" />
+                    android:inputType="number"
+                    android:maxLength="2" />
 
                 <TextView
                     android:id="@+id/tvServeThreshLabel"
@@ -338,17 +374,23 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="16dp"
                     android:text="Serve Pruning:"
-                    android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary" />
 
                 <EditText
                     android:id="@+id/etServeThresh"
-                    android:layout_width="0dp"
+                    android:layout_width="48dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:layout_marginStart="8dp"
-                    android:inputType="number" />
+                    android:inputType="number"
+                    android:maxLength="2" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="?android:attr/listDivider" />
 
             <!-- SYSTEM ACTIONS -->
             <LinearLayout
@@ -398,6 +440,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Test Nano Audio"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_horizontal"
+                android:layout_marginTop="4dp">
+
+                <Button
+                    android:id="@+id/btnInsertFakeCalls"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Insert Fake Calls"
                     android:textAllCaps="false" />
             </LinearLayout>
         </LinearLayout>

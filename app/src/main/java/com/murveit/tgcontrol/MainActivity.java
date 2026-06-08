@@ -173,12 +173,14 @@ public class MainActivity extends AppCompatActivity {
     private final SharedPreferences.OnSharedPreferenceChangeListener nanoAudioPrefListener =
             (prefs, key) -> {
                 if (SettingsActivity.KEY_NANO_AUDIO.equals(key) ||
-                        SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH.equals(key)) {
+                        SettingsActivity.KEY_IN_SERVE_AUDIO.equals(key)) {
                     if (CommunicationService.isTracking) {
                         boolean enabled = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false);
-                        boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH, true);
+                        boolean voiceCalls = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+                        String inServeAudio = prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute");
                         sendCommand("SET_NANO_AUDIO:" + (enabled ? "1" : "0")
-                                + ",SPEAK_MPH=" + (speakMph ? "1" : "0") + "\n");
+                                + ",voice_calls=" + (voiceCalls ? "1" : "0")
+                                + ",in_serve=" + inServeAudio + "\n");
                         CommunicationService.nanoAudioActive = enabled;
                     }
                 }
@@ -752,8 +754,10 @@ public class MainActivity extends AppCompatActivity {
                 // 2. Audio Feedback
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
                 boolean playVoice = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
-                boolean playBeep = prefs.getBoolean(SettingsActivity.KEY_BEEP_IN, false);
-                boolean speakMph = prefs.getBoolean(SettingsActivity.KEY_SPEAK_MPH, false);
+                String inServeAudio = prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute");
+                // Only serves use the In-serve radio setting; non-serve In calls are always muted.
+                // A separate control for rally In calls is planned.
+                boolean isServeCall = "Serve".equalsIgnoreCase(strikeType);
 
                 // Speech is fired early from tryPlayEarlyAudio() on the network background thread.
                 // Fall back to here for the debug button and any path that bypasses the network,
@@ -762,7 +766,7 @@ public class MainActivity extends AppCompatActivity {
                 boolean earlyAudioHandled =
                         (System.currentTimeMillis() - CommunicationService.lastEarlyAudioFiredMs) < 500;
                 if (!earlyAudioHandled && !CommunicationService.nanoAudioActive && fastSpeechEngine != null) {
-                    if ("In".equalsIgnoreCase(callStr) && speakMph) {
+                    if ("In".equalsIgnoreCase(callStr) && isServeCall && "mph".equals(inServeAudio) && playVoice) {
                         int mphInt = (int) Math.round(mph);
                         long now = System.currentTimeMillis();
                         String ttsMphStr;
@@ -779,8 +783,9 @@ public class MainActivity extends AppCompatActivity {
                         fastSpeechEngine.speak("Let");
                     }
                 }
-                // Beep for "In" (mutually exclusive with speech, stays on main thread)
-                if (!CommunicationService.nanoAudioActive && !speakMph && playBeep && toneGenerator != null && "In".equalsIgnoreCase(callStr)) {
+                // Beep for In serves (stays on main thread; mutually exclusive with speech)
+                if (!CommunicationService.nanoAudioActive && "beep".equals(inServeAudio) && playVoice
+                        && toneGenerator != null && "In".equalsIgnoreCase(callStr) && isServeCall) {
                     toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
                 }
             }
@@ -1109,7 +1114,7 @@ public class MainActivity extends AppCompatActivity {
           .append(",debug_calib=").append(prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false) ? 1 : 0)
           .append(",serve_thresh=").append(prefs.getInt(SettingsActivity.KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH))
           .append(",nano_audio=").append(prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false) ? 1 : 0)
-          .append(",nano_audio_speak_mph=").append(prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO_SPEAK_MPH, true) ? 1 : 0)
+          .append(",in_serve=").append(prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute"))
           .append("\n");
         return sb.toString();
     }
