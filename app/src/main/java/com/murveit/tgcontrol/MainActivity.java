@@ -22,17 +22,33 @@ package com.murveit.tgcontrol;
  * - Toggles checkmark visibility and dynamically manages `.setEnabled()` states on the tennis mode buttons, 
  * enforcing the algorithmic requirement that both cameras must be calibrated before play modes unlock.
  * - Intercepts "CALIBRATION_SAVED" to instantly query and update UI when returning from CalibrationActivity.
- * - JSON Interception: Parses "TRACK_EVENT_JSON" and utilizes TextToSpeech to vocally call "Faults" 
- * or triggers a ToneGenerator "beep" for "In" balls during Serve Practice mode.
- * - Error Handling: Intercepts hardware-level watchdog timeouts from the server and displays blocking 
- * Alert Dialogs so the user knows exactly when a Jetson reboot is required.
- * - Visual Plotting: Extracts bounce X/Y coordinates during Serve Practice and routes them to a custom 
- * hardware-accelerated `ServeScatterView` for top-down spatial visualization.
+ * - JSON Interception: processTrackEventJson() handles TRACK_EVENT_JSON messages.
+ *     SERVE_PRACTICE: updates scatter plot, stats (total/in count, avg MPH), and audio (MPH
+ *       readout, "Fault"/"Let", or ToneGenerator beep for In serves).
+ *     SINGLES/DOUBLES: speaks "Out"/"Fault"/"Let" via FastSpeechEngine if Voice Calls is on.
+ *       Plays a double-beep (two sequential ToneGenerator tones) when End of Point Beeps is on
+ *       and no voice call was spoken (terminal call is "In", or Voice Calls is off).
+ *       Early audio from CommunicationService.tryPlayEarlyAudio() fires first on the network
+ *       thread; lastEarlyAudioFiredMs timestamp suppresses duplicate speech here.
+ * - In-Point Streaming: processInPointUpdate() handles POINT_UPDATE_JSON messages in
+ *   SINGLES/DOUBLES mode. The payload is a full build_point_summary() dict (partial=true).
+ *   Android always replaces its PointVectorView state (no merge). If stroke_count grew and
+ *   In-Point Beeps is on, fires a single ToneGenerator beep for the new bounce.
+ *   If the last stroke's call_str is Out/Fault/Let and Voice Calls is on, fires the
+ *   pre-recorded WAV immediately — concurrent with the PointVectorView update. This
+ *   eliminates the 0.5–1.0 s structural gap that occurs when waiting for TRACK_EVENT_JSON.
+ *   lastInPointCallFired tracks whether audio already fired for this point so the
+ *   TRACK_EVENT_JSON fallback path does not play the same call twice.
+ * - Error Handling: Intercepts hardware-level watchdog timeouts from the server and displays
+ *   blocking Alert Dialogs so the user knows exactly when a Jetson reboot is required.
+ * - Visual Plotting: SERVE_PRACTICE uses ServeScatterView (half-court scatter of serve impacts).
+ *   SINGLES/DOUBLES uses PointVectorView (full-court trajectory vectors for rally review).
+ *   Both share llServePlotContainer and the Plot/Log toggle button.
  *
  * 3. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Visually disables (greys out) or enables Singles, Doubles, Serve, and Rally buttons in real-time.
  * - Dispatches specific startup, telemetry, and tracking stop/start strings to the TCP socket layer.
- * - Generates physical audio outputs (Voice synthesis, DTMF tones) matching real-time point progression.
+ * - Generates physical audio outputs (voice synthesis, DTMF tones) matching real-time point progression.
  */
 
 import android.Manifest;
@@ -111,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String Emulator_HOST = "10.0.2.2";
     private static final String TG_AP_HOST = "10.42.0.1";
     private static final String TG_CHICO_HOST = "192.168.86.31";
+    private static final String MACBOOK_HOST = "192.168.86.39";
     private static final String LOCAL_HOST = "localhost";
 
     private static final int REQUEST_CODE_POST_NOTIFICATIONS = 101;
@@ -141,7 +158,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvPoseLeft, tvPoseRight;
     private CheckBox cbRecordSession;
     
-    // UI Elements for Serve Plotting
+    // UI Elements for Serve Plotting (SERVE_PRACTICE) and Rally Vectors (SINGLES/DOUBLES)
     private LinearLayout llServePlotContainer;
     private View llTrackingLogContainer; // Added to support the new border layout
     private View svTrackingLog;
@@ -150,12 +167,18 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvAvgMph;
     private TextView tvLastServe;
     private ServeScatterView serveScatterView;
-    
+    private PointVectorView pointVectorView;
+
     // State Tracking for Serve Plotting
     private List<ServeScatterView.ServeImpact> serveImpacts = new ArrayList<>();
     private int totalServeCount = 0;
     private int inServeCount = 0;
     private double sumInMph = 0.0;
+    // Stroke count from the last received POINT_UPDATE_JSON; used to detect new bounces for beep.
+    private int lastKnownStrokeCount = 0;
+    // Call string (Out/Fault/Let) for which audio was already fired from processInPointUpdate;
+    // empty string means no audio has fired yet for the current point. Reset per point.
+    private String lastInPointCallFired = "";
     private boolean sessionRecording = false;
 
     // Recording indicator icon (right side of title bar)
@@ -293,6 +316,7 @@ public class MainActivity extends AppCompatActivity {
         tvAvgMph = findViewById(R.id.tvAvgMph);
         tvLastServe = findViewById(R.id.tvLastServe);
         serveScatterView = findViewById(R.id.serveScatterView);
+        pointVectorView = findViewById(R.id.pointVectorView);
         ivRecordingIndicator = findViewById(R.id.ivRecordingIndicator);
         llDisconnectOverlay = findViewById(R.id.llDisconnectOverlay);
         tvNetworkStatus = findViewById(R.id.tvNetworkStatus);
@@ -400,15 +424,23 @@ public class MainActivity extends AppCompatActivity {
 
         if (btnClearServes != null) {
             btnClearServes.setOnClickListener(v -> {
-                FileLogger.log(this, "Clearing serves from plot");
-                serveImpacts.clear();
-                totalServeCount = 0;
-                inServeCount = 0;
-                sumInMph = 0.0;
-                if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
-                if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
+                boolean isSD = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                        || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+                if (isSD) {
+                    FileLogger.log(this, "Clearing point vectors from plot");
+                    if (pointVectorView != null) pointVectorView.clearPoint();
+                    lastKnownStrokeCount = 0;
+                } else {
+                    FileLogger.log(this, "Clearing serves from plot");
+                    serveImpacts.clear();
+                    totalServeCount = 0;
+                    inServeCount = 0;
+                    sumInMph = 0.0;
+                    if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+                    if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
+                    if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+                }
                 if (tvTrackingLog != null) tvTrackingLog.setText("");
-                if (tvLastServe != null) tvLastServe.setText("Ready for serves");
             });
         }
     }
@@ -441,26 +473,48 @@ public class MainActivity extends AppCompatActivity {
             
             // Handle specific Serve Practice layout requirements safely
             if (newState == STATE_ACTIVE_TENNIS) {
+                boolean isSinglesDoublesMode = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                        || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+
                 if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
                     // Default to showing the graphical plot when entering Serve Practice
                     if (btnToggleView != null) btnToggleView.setVisibility(View.VISIBLE);
                     if (btnClearServes != null) btnClearServes.setVisibility(View.VISIBLE);
                     if (llServePlotContainer != null) llServePlotContainer.setVisibility(View.VISIBLE);
+                    if (serveScatterView != null) serveScatterView.setVisibility(View.VISIBLE);
+                    if (pointVectorView != null) pointVectorView.setVisibility(View.GONE);
                     if (tvAvgMph != null) tvAvgMph.setVisibility(View.VISIBLE);
                     if (tvLastServe != null) tvLastServe.setVisibility(View.VISIBLE);
-                    
+
                     if (llTrackingLogContainer != null) llTrackingLogContainer.setVisibility(View.GONE);
                     else if (svTrackingLog != null) svTrackingLog.setVisibility(View.GONE);
-                    
+
                     if (btnToggleView != null) btnToggleView.setText("Log");
+                } else if (isSinglesDoublesMode) {
+                    // SINGLES/DOUBLES: show full-court trajectory view, default to plot
+                    if (btnToggleView != null) btnToggleView.setVisibility(View.VISIBLE);
+                    if (btnClearServes != null) btnClearServes.setVisibility(View.VISIBLE);
+                    if (llServePlotContainer != null) llServePlotContainer.setVisibility(View.VISIBLE);
+                    if (serveScatterView != null) serveScatterView.setVisibility(View.GONE);
+                    if (pointVectorView != null) pointVectorView.setVisibility(View.VISIBLE);
+                    if (tvAvgMph != null) tvAvgMph.setVisibility(View.GONE);
+                    if (tvLastServe != null) tvLastServe.setVisibility(View.GONE);
+
+                    if (llTrackingLogContainer != null) llTrackingLogContainer.setVisibility(View.GONE);
+                    else if (svTrackingLog != null) svTrackingLog.setVisibility(View.GONE);
+
+                    if (btnToggleView != null) btnToggleView.setText("Log");
+                    lastKnownStrokeCount = 0;
                 } else {
-                    // Force the text log for all other modes
+                    // Force the text log for all other modes (RALLY_PRACTICE, etc.)
                     if (btnToggleView != null) btnToggleView.setVisibility(View.GONE);
                     if (btnClearServes != null) btnClearServes.setVisibility(View.GONE);
                     if (llServePlotContainer != null) llServePlotContainer.setVisibility(View.GONE);
+                    if (serveScatterView != null) serveScatterView.setVisibility(View.GONE);
+                    if (pointVectorView != null) pointVectorView.setVisibility(View.GONE);
                     if (tvAvgMph != null) tvAvgMph.setVisibility(View.GONE);
                     if (tvLastServe != null) tvLastServe.setVisibility(View.GONE);
-                    
+
                     if (llTrackingLogContainer != null) llTrackingLogContainer.setVisibility(View.VISIBLE);
                     else if (svTrackingLog != null) svTrackingLog.setVisibility(View.VISIBLE);
                 }
@@ -533,6 +587,11 @@ public class MainActivity extends AppCompatActivity {
 
             if ("TRACK_EVENT_JSON".equals(status)) {
                 processTrackEventJson(message);
+                return;
+            }
+
+            if ("POINT_UPDATE_JSON".equals(status)) {
+                processInPointUpdate(message);
                 return;
             }
 
@@ -644,6 +703,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void processTrackEventJson(String message) {
+        // Point ended: reset in-point stroke counter and call tracker so next point starts fresh.
+        // Save prevInPointCall before resetting: used below to suppress duplicate audio when
+        // processInPointUpdate already fired the voice call concurrently with the display update.
+        String prevInPointCall = lastInPointCallFired;
+        lastInPointCallFired = "";
+        lastKnownStrokeCount = 0;
+        if (pointVectorView != null) pointVectorView.clearPoint();
         final long receiveMs = System.currentTimeMillis();
         try {
             org.json.JSONObject json = new org.json.JSONObject(message);
@@ -681,6 +747,47 @@ public class MainActivity extends AppCompatActivity {
                                              timePrefix, strikeType, callStr, mph);
             appendToTrackingLog(formatted);
             
+            // --- SINGLES/DOUBLES AUDIO ---
+            boolean isSinglesDoubles = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                    || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+            if (isSinglesDoubles) {
+                SharedPreferences sdPrefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
+                boolean sdPlayVoice        = sdPrefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+                boolean sdEndOfPointBeeps  = sdPrefs.getBoolean(SettingsActivity.KEY_END_OF_POINT_BEEPS, false);
+
+                // Voice calls: Out/Fault/Let spoken if Voice Calls is on.
+                // Skip if processInPointUpdate already fired audio concurrently with the display
+                // update (prevInPointCall non-empty), or if tryPlayEarlyAudio fired on the network
+                // thread (lastEarlyAudioFiredMs within 500 ms). Fall back here only for the debug
+                // button path which bypasses both early-audio paths.
+                boolean earlyFired = !prevInPointCall.isEmpty()
+                        || (System.currentTimeMillis() - CommunicationService.lastEarlyAudioFiredMs) < 500;
+                if (!earlyFired && !CommunicationService.nanoAudioActive && fastSpeechEngine != null && sdPlayVoice) {
+                    if ("Out".equalsIgnoreCase(callStr)) {
+                        fastSpeechEngine.speak("Out");
+                    } else if ("Fault".equalsIgnoreCase(callStr)) {
+                        fastSpeechEngine.speak("Fault");
+                    } else if ("Let".equalsIgnoreCase(callStr)) {
+                        fastSpeechEngine.speak("Let");
+                    }
+                }
+
+                // End of Point Beeps: double-beep when no voice call was spoken.
+                // Fires when call_str is 'In' (double bounce / net crash with In call),
+                // or when voice is off regardless of call.
+                boolean voiceSpoken = sdPlayVoice && ("Out".equalsIgnoreCase(callStr)
+                        || "Fault".equalsIgnoreCase(callStr) || "Let".equalsIgnoreCase(callStr));
+                if (!CommunicationService.nanoAudioActive && sdEndOfPointBeeps && !voiceSpoken
+                        && toneGenerator != null) {
+                    toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
+                    mainHandler.postDelayed(() -> {
+                        if (toneGenerator != null) {
+                            toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, HAPPY_BEEP_DURATION_MS);
+                        }
+                    }, HAPPY_BEEP_DURATION_MS + 100);
+                }
+            }
+
             // --- SERVE PRACTICE VISUALIZATION & AUDIO ---
             if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
                 
@@ -1040,6 +1147,87 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void processInPointUpdate(String message) {
+        boolean isSinglesDoubles = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+        if (!isSinglesDoubles || pointVectorView == null) return;
+
+        try {
+            org.json.JSONObject json = new org.json.JSONObject(message);
+            int strokeCount = json.optInt("stroke_count", 0);
+            org.json.JSONArray strokes = json.optJSONArray("strokes");
+
+            java.util.List<PointVectorView.PointEvent> eventList = new java.util.ArrayList<>();
+            if (strokes != null) {
+                for (int i = 0; i < strokes.length(); i++) {
+                    org.json.JSONObject s = strokes.getJSONObject(i);
+                    float hx = (float) s.optDouble("x", 0.0);
+                    float hy = (float) s.optDouble("y", 0.0);
+                    org.json.JSONObject bounce = s.optJSONObject("bounce");
+                    float bx = bounce != null ? (float) bounce.optDouble("x", 0.0) : 0f;
+                    float by = bounce != null ? (float) bounce.optDouble("y", 0.0) : 0f;
+                    String call = s.optString("call_str", "In");
+                    String type = s.optString("type", "hit");
+                    eventList.add(new PointVectorView.PointEvent(hx, hy, bx, by, call, type));
+                }
+            }
+
+            pointVectorView.setPointData(eventList);
+
+            // Voice audio: fire immediately when the last stroke resolves to a terminal call,
+            // concurrent with the PointVectorView update. This eliminates the structural 0.5–1.0 s
+            // gap that would occur if audio were deferred to TRACK_EVENT_JSON.
+            // Only fires once per point (lastInPointCallFired resets in processTrackEventJson).
+            if (lastInPointCallFired.isEmpty() && strokes != null && strokes.length() > 0) {
+                try {
+                    org.json.JSONObject lastStroke = strokes.getJSONObject(strokes.length() - 1);
+                    String lastCallStr = lastStroke.optString("call_str", "In").trim();
+                    SharedPreferences vPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+                    boolean playVoice = vPrefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
+                    if (playVoice && !CommunicationService.nanoAudioActive) {
+                        if ("Out".equalsIgnoreCase(lastCallStr)) {
+                            lastInPointCallFired = lastCallStr;
+                            CommunicationService.lastEarlyAudioFiredMs = System.currentTimeMillis();
+                            playRawAudio(R.raw.out);
+                        } else if ("Fault".equalsIgnoreCase(lastCallStr)) {
+                            lastInPointCallFired = lastCallStr;
+                            CommunicationService.lastEarlyAudioFiredMs = System.currentTimeMillis();
+                            playRawAudio(R.raw.fault);
+                        } else if ("Let".equalsIgnoreCase(lastCallStr)) {
+                            lastInPointCallFired = lastCallStr;
+                            CommunicationService.lastEarlyAudioFiredMs = System.currentTimeMillis();
+                            playRawAudio(R.raw.let);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // In-Point Beep: single short beep when a new bounce is confirmed mid-rally
+            if (strokeCount > lastKnownStrokeCount) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+                boolean inCallsEnabled = prefs.getBoolean(SettingsActivity.KEY_IN_CALLS, false);
+                if (inCallsEnabled && !CommunicationService.nanoAudioActive && toneGenerator != null) {
+                    toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, HAPPY_BEEP_DURATION_MS);
+                }
+            }
+            lastKnownStrokeCount = strokeCount;
+
+        } catch (Exception e) {
+            FileLogger.log(this, "processInPointUpdate parse error: " + e.getMessage());
+        }
+    }
+
+    private void playRawAudio(int resId) {
+        try {
+            android.media.MediaPlayer mp = android.media.MediaPlayer.create(this, resId);
+            if (mp == null) return;
+            mp.setOnCompletionListener(android.media.MediaPlayer::release);
+            mp.start();
+        } catch (Exception e) {
+            FileLogger.log(this, "playRawAudio error", e);
+        }
+    }
+
     private void appendToTrackingLog(String text) {
         if (tvTrackingLog != null) {
             tvTrackingLog.append(text + "\n");
@@ -1145,6 +1333,7 @@ public class MainActivity extends AppCompatActivity {
         if ("Localhost".equals(target)) return LOCAL_HOST;
         if ("TG_AP".equals(target)) return TG_AP_HOST;
         if ("Emulator".equals(target)) return Emulator_HOST;
+        if ("Macbook".equals(target)) return MACBOOK_HOST;
         return TG_CHICO_HOST;
     }
 

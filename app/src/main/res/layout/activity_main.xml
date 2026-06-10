@@ -483,11 +483,20 @@
                     android:layout_height="0dp"
                     android:layout_weight="1"
                     android:visibility="gone">
-                
+
+                    <!-- SERVE_PRACTICE: half-court scatter plot of serve impacts -->
                     <com.murveit.tgcontrol.ServeScatterView
                         android:id="@+id/serveScatterView"
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"/>
+                        android:layout_height="match_parent"
+                        android:visibility="gone"/>
+
+                    <!-- SINGLES/DOUBLES: full-court trajectory vectors for rally review -->
+                    <com.murveit.tgcontrol.PointVectorView
+                        android:id="@+id/pointVectorView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:visibility="gone"/>
                 </LinearLayout>
 
                 <!-- THE ORIGINAL TEXT LOG (Wrapped in a 1dp layout to create a border) -->

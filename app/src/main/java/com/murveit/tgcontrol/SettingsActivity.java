@@ -7,24 +7,41 @@ package com.murveit.tgcontrol;
  * Note: Calibration launch functionality has been moved to the Tennis Menu in MainActivity.
  *
  * 1. INITIALIZATION:
- * - Inflates `activity_settings.xml` and binds UI widgets.
+ * - Inflates `activity_settings.xml` and binds UI widgets including the new audio controls.
  * - Loads persistent user preferences using `SharedPreferences`.
  *
  * 2. CALLING PROCEDURE:
  * - Launched via an Intent from `MainActivity` when the gear icon is tapped.
  *
  * 3. INTERNAL ALGORITHMIC LOGIC:
- * - UI Sync: Translates raw numeric values from disk into user-readable strings (e.g., converting 
- * nanoseconds to seconds dynamically via a TextWatcher).
- * - Volatile Storage: Holds state changes in memory while the user interacts with EditTexts and SeekBars.
- * - Audio Toggles: Stores user preferences for voice-assisted Line Calls and Beeps.
- * - Disk Persistence: Overrides the `onPause()` lifecycle method to asynchronously commit (`apply()`) 
- * all active UI states back into `SharedPreferences` the moment the user backgrounds the activity.
- * - Log Management: Provides utility functions to read, compress (GZIP), and share the app's debug 
- * text logs using Android's FileProvider system.
+ * - UI Sync: Translates raw numeric values from disk into user-readable strings (e.g., converting
+ *   nanoseconds to seconds dynamically via a TextWatcher).
+ * - Volatile Storage: Holds state changes in memory while the user interacts with EditTexts and
+ *   SeekBars.
+ * - Audio Controls (all modes):
+ *     Nano Audio checkbox: when on, the Nano generates audio; app audio is suppressed.
+ *     Voice Calls checkbox: master on/off for spoken calls ("Out.", "Fault.", "Let."). Applies
+ *       to both SERVE_PRACTICE and SINGLES/DOUBLES.
+ *     In Serves radio (MPH / Beep / Mute): controls In-serve audio in SERVE_PRACTICE only.
+ *       In SINGLES/DOUBLES, in-serves are treated as in-calls (no MPH readout).
+ *   SINGLES/DOUBLES-specific controls:
+ *     End of Point Beeps checkbox: when on, plays a double-beep at the end of a point whenever
+ *       no voice call was spoken (i.e. the terminal event was an In bounce such as a double
+ *       bounce, or Voice Calls is off).
+ *     In-Point Beeps checkbox: when on, plays a single beep each time a new mid-rally bounce
+ *       is confirmed (driven by POINT_UPDATE_JSON from the server). Android-side only; no
+ *       Nano counterpart.
+ * - Live Sync: setupAudioListeners() attaches onChange callbacks to all audio controls so that
+ *   sendAudioSettings() fires immediately on any change, sending SET_NANO_AUDIO to the server
+ *   without requiring a tracking restart. The command carries:
+ *     nano_audio=0/1, voice_calls=0/1, in_serve=mph/beep/mute, end_of_point_beeps=0/1.
+ * - Disk Persistence: onPause() asynchronously commits all UI states to SharedPreferences.
+ * - Log Management: Provides utility functions to read, compress (GZIP), and share the app's
+ *   debug text logs using Android's FileProvider system.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Writes configuration data to device storage, mutating the parameters used by `MainActivity`.
+ * - Immediately sends SET_NANO_AUDIO to the Nano whenever any audio control changes.
  * - Launches intents for external applications (e.g., Email, Drive) to share `.gz` log files.
  */
 
@@ -63,6 +80,10 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_IN_SERVE_AUDIO = "in_serve_audio";
     // When enabled, the Nano speaks calls directly via USB audio; app audio is suppressed.
     public static final String KEY_NANO_AUDIO = "nano_audio";
+    // SINGLES/DOUBLES: plays a double-beep when a point ends without a spoken Out/Fault/Let.
+    public static final String KEY_END_OF_POINT_BEEPS = "end_of_point_beeps";
+    // SINGLES/DOUBLES: plays a single beep each time a new mid-rally bounce is confirmed.
+    public static final String KEY_IN_CALLS = "in_calls";
     // Represents the user preference to enable verbose algorithmic tracking logs on the server
     public static final String KEY_ENABLE_LOGGING = "enable_logging";
     // Bypass the 12-hour TTL for offline or home testing
@@ -82,6 +103,8 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbAwbLock;
     private CheckBox cbNanoAudio;
     private CheckBox cbVoiceCalls;
+    private CheckBox cbEndOfPointBeeps;
+    private CheckBox cbInCalls;
     private android.widget.RadioGroup rgInServe;
     private CheckBox cbEnableLogging;
     private boolean isFakeCallsActive = false;
@@ -114,6 +137,8 @@ public class SettingsActivity extends AppCompatActivity {
         cbAwbLock = findViewById(R.id.cbAwbLock);
         cbNanoAudio = findViewById(R.id.cbNanoAudio);
         cbVoiceCalls = findViewById(R.id.cbVoiceCalls);
+        cbEndOfPointBeeps = findViewById(R.id.cbEndOfPointBeeps);
+        cbInCalls = findViewById(R.id.cbInCalls);
         rgInServe = findViewById(R.id.rgInServe);
         cbEnableLogging = findViewById(R.id.cbEnableLogging);
         cbDebugCalibration = findViewById(R.id.cbDebugCalibration);
@@ -256,6 +281,8 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbAwbLock != null) cbAwbLock.setChecked(prefs.getBoolean(KEY_AWB_LOCK, false));
         if (cbNanoAudio != null) cbNanoAudio.setChecked(prefs.getBoolean(KEY_NANO_AUDIO, false));
         if (cbVoiceCalls != null) cbVoiceCalls.setChecked(prefs.getBoolean(KEY_VOICE_CALLS, false));
+        if (cbEndOfPointBeeps != null) cbEndOfPointBeeps.setChecked(prefs.getBoolean(KEY_END_OF_POINT_BEEPS, false));
+        if (cbInCalls != null) cbInCalls.setChecked(prefs.getBoolean(KEY_IN_CALLS, false));
         if (rgInServe != null) {
             String inServeAudio = prefs.getString(KEY_IN_SERVE_AUDIO, "mute");
             if ("mph".equals(inServeAudio))       rgInServe.check(R.id.rbInServeMph);
@@ -293,6 +320,8 @@ public class SettingsActivity extends AppCompatActivity {
         if (cbAwbLock != null) editor.putBoolean(KEY_AWB_LOCK, cbAwbLock.isChecked());
         if (cbNanoAudio != null) editor.putBoolean(KEY_NANO_AUDIO, cbNanoAudio.isChecked());
         if (cbVoiceCalls != null) editor.putBoolean(KEY_VOICE_CALLS, cbVoiceCalls.isChecked());
+        if (cbEndOfPointBeeps != null) editor.putBoolean(KEY_END_OF_POINT_BEEPS, cbEndOfPointBeeps.isChecked());
+        if (cbInCalls != null) editor.putBoolean(KEY_IN_CALLS, cbInCalls.isChecked());
         if (rgInServe != null) {
             String inServeAudio = "mute";
             int checked = rgInServe.getCheckedRadioButtonId();
@@ -450,8 +479,9 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void sendAudioSettings() {
-        boolean nanoAudio  = cbNanoAudio != null && cbNanoAudio.isChecked();
-        boolean voiceCalls = cbVoiceCalls != null && cbVoiceCalls.isChecked();
+        boolean nanoAudio        = cbNanoAudio != null && cbNanoAudio.isChecked();
+        boolean voiceCalls       = cbVoiceCalls != null && cbVoiceCalls.isChecked();
+        boolean endOfPointBeeps  = cbEndOfPointBeeps != null && cbEndOfPointBeeps.isChecked();
         String inServeAudio = "mute";
         if (rgInServe != null) {
             int checked = rgInServe.getCheckedRadioButtonId();
@@ -464,7 +494,8 @@ public class SettingsActivity extends AppCompatActivity {
         if (!CommunicationService.isServerConnected) return;
         sendCommand("SET_NANO_AUDIO:" + (nanoAudio ? "1" : "0")
                 + ",voice_calls=" + (voiceCalls ? "1" : "0")
-                + ",in_serve=" + inServeAudio + "\n");
+                + ",in_serve=" + inServeAudio
+                + ",end_of_point_beeps=" + (endOfPointBeeps ? "1" : "0") + "\n");
     }
 
     private void setupAudioListeners() {
@@ -473,9 +504,10 @@ public class SettingsActivity extends AppCompatActivity {
         // Set up AFTER loadSettings() to avoid spurious sends during initialisation.
         android.widget.CompoundButton.OnCheckedChangeListener audioListener =
                 (btn, isChecked) -> sendAudioSettings();
-        if (cbNanoAudio != null)  cbNanoAudio.setOnCheckedChangeListener(audioListener);
-        if (cbVoiceCalls != null) cbVoiceCalls.setOnCheckedChangeListener(audioListener);
-        if (rgInServe != null)    rgInServe.setOnCheckedChangeListener((group, checkedId) -> sendAudioSettings());
+        if (cbNanoAudio != null)         cbNanoAudio.setOnCheckedChangeListener(audioListener);
+        if (cbVoiceCalls != null)        cbVoiceCalls.setOnCheckedChangeListener(audioListener);
+        if (cbEndOfPointBeeps != null)   cbEndOfPointBeeps.setOnCheckedChangeListener(audioListener);
+        if (rgInServe != null)           rgInServe.setOnCheckedChangeListener((group, checkedId) -> sendAudioSettings());
     }
 
     private void sendCommand(String command) {

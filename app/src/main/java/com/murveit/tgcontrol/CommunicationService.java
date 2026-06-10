@@ -61,26 +61,39 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * 3. INTERNAL ALGORITHMIC LOGIC (Step-by-Step):
  * - Network Request: Requests a WiFi-only connection, explicitly removing the internet
- * capability requirement to prevent Android from dropping the captive portal AP.
+ *   capability requirement to prevent Android from dropping the captive portal AP.
  * - Process Binding: Binds the entire app process to the Jetson's WiFi network (ignoring cellular).
  * - Socket Loop: Opens a TCP socket to port 8000. Continuously reads data chunks utilizing a
- * persistent ByteArrayOutputStream to safely handle fragmented TCP packets and socket timeouts.
- * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:") and intercepts
- * binary image transfers by reading fixed-length headers.
+ *   persistent ByteArrayOutputStream to safely handle fragmented TCP packets and socket timeouts.
+ * - Protocol Parsing: Routes string messages ("STATUS:", "STATUS_FRAMES:", "TRACK_EVENT_JSON:",
+ *   "POINT_UPDATE_JSON:") and intercepts binary image transfers by reading fixed-length headers.
+ *   POINT_UPDATE_JSON carries a mid-point build_point_summary() payload (partial=true) for
+ *   real-time court graphics; it is always a full replacement, never a delta.
+ * - Early Audio (tryPlayEarlyAudio): Called on the network receive thread when TRACK_EVENT_JSON
+ *   arrives, before the LiveData post reaches the main thread. Handles two modes:
+ *     SERVE_PRACTICE: In-serve → speaks MPH if in_serve=mph; Out/Fault → "Fault"; Let → "Let".
+ *     SINGLES/DOUBLES: Out → "Out"; Fault → "Fault"; Let → "Let" if voice_calls on.
+ *       However, for SINGLES/DOUBLES the preferred path is MainActivity.processInPointUpdate(),
+ *       which fires audio concurrently with the PointVectorView update (on POINT_UPDATE_JSON,
+ *       ~0.5–1.0 s earlier). When that path fires it stamps lastEarlyAudioFiredMs; this method
+ *       skips if lastEarlyAudioFiredMs was set within the last 2 s to avoid double-play.
+ *       Double-beep for non-Out terminals is deferred to the main thread in MainActivity.
+ *   lastEarlyAudioFiredMs is stamped so the main-thread fallback can suppress duplicates.
  * - UI Delegation: Posts parsed data and Bitmaps to statically accessible `LiveData` objects.
  * - WiFi Grace Period: When onLost fires, a WIFI_LOSS_GRACE_PERIOD_MS timer starts instead of
  *   immediately disconnecting. If onAvailable fires within the window, the timer is cancelled
  *   and the socket is re-established automatically. If the timer expires, a full disconnect
  *   fires. During the grace period, disconnect() performs a partial teardown (closes socket
  *   only) so the network callback remains registered for the auto-reconnect.
- * - Lifecycle Management: Implementation of onTaskRemoved ensures that swiping the app kills
- *   the service and closes the socket immediately, preventing "Zombie" connections.
+ * - Lifecycle Management: onTaskRemoved ensures that swiping the app kills the service and
+ *   closes the socket immediately, preventing "Zombie" connections.
  * - Data Invalidation: Explicitly clears imageData LiveData when starting new calibration or
  *   capture sequences to prevent "sticky" stale images from being shown to the user.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Keeps the Android WiFi radio locked to the Jetson.
- * - Streams live data to the MainActivity.
+ * - Streams live data to the MainActivity via LiveData (statusData, imageData).
+ * - Fires low-latency audio on the network receive thread via FastSpeechEngine.
  * - Maintains a persistent Foreground Notification.
  */
 public class CommunicationService extends Service {
@@ -556,6 +569,12 @@ public class CommunicationService extends Service {
                                 String jsonStr = serverMessage.substring("TRACK_EVENT_JSON:".length()).trim();
                                 tryPlayEarlyAudio(jsonStr);
                                 statusData.postValue(new Pair<>("TRACK_EVENT_JSON", jsonStr));
+                            } else if (serverMessage.startsWith("POINT_UPDATE_JSON:")) {
+                                // Mid-point trajectory update for SINGLES/DOUBLES court graphics.
+                                // Sent whenever a new bounce is resolved; Android always replaces
+                                // prior state (no merge).
+                                String jsonStr = serverMessage.substring("POINT_UPDATE_JSON:".length()).trim();
+                                statusData.postValue(new Pair<>("POINT_UPDATE_JSON", jsonStr));
                             } else {
                                 // For all other text messages, just post them to the UI
                                 String[] parts = serverMessage.split(":", 2);
@@ -603,7 +622,10 @@ public class CommunicationService extends Service {
         if (nanoAudioActive) return;  // Nano is speaking; suppress app audio.
         FastSpeechEngine engine = earlyAudioEngine;
         if (engine == null) return;
-        if (!"SERVE_PRACTICE".equals(activeTennisMode)) return;
+
+        boolean isServePractice   = "SERVE_PRACTICE".equals(activeTennisMode);
+        boolean isSinglesDoubles  = "SINGLES".equals(activeTennisMode) || "DOUBLES".equals(activeTennisMode);
+        if (!isServePractice && !isSinglesDoubles) return;
 
         try {
             org.json.JSONObject json = new org.json.JSONObject(jsonStr);
@@ -613,38 +635,70 @@ public class CommunicationService extends Service {
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
             boolean playVoice    = prefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
-            String inServeAudio  = prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute");
-            // Only serves use the In-serve setting; non-serve In calls are always muted.
-            boolean isServeCall  = "Serve".equalsIgnoreCase(strikeType);
 
-            if ("In".equalsIgnoreCase(callStr)) {
-                if (isServeCall && "mph".equals(inServeAudio) && playVoice) {
-                    int mphInt = (int) Math.round(mph);
-                    String ttsMphStr;
-                    long now = System.currentTimeMillis();
-                    if (now - lastEarlySpokenMphTimeMs > EARLY_AUDIO_MPH_COOLDOWN_MS) {
-                        ttsMphStr = mphInt + " miles per hour";
-                        lastEarlySpokenMphTimeMs = now;
-                    } else {
-                        ttsMphStr = String.valueOf(mphInt);
+            if (isServePractice) {
+                String inServeAudio  = prefs.getString(SettingsActivity.KEY_IN_SERVE_AUDIO, "mute");
+                // Only serves use the In-serve setting; non-serve In calls are always muted.
+                boolean isServeCall  = "Serve".equalsIgnoreCase(strikeType);
+
+                if ("In".equalsIgnoreCase(callStr)) {
+                    if (isServeCall && "mph".equals(inServeAudio) && playVoice) {
+                        int mphInt = (int) Math.round(mph);
+                        String ttsMphStr;
+                        long now = System.currentTimeMillis();
+                        if (now - lastEarlySpokenMphTimeMs > EARLY_AUDIO_MPH_COOLDOWN_MS) {
+                            ttsMphStr = mphInt + " miles per hour";
+                            lastEarlySpokenMphTimeMs = now;
+                        } else {
+                            ttsMphStr = String.valueOf(mphInt);
+                        }
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        engine.speak(ttsMphStr);
                     }
-                    lastEarlyAudioFiredMs = System.currentTimeMillis();
-                    engine.speak(ttsMphStr);
+                    // Beep mode stays on the main thread via toneGenerator — not handled here
+                } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+                    if (playVoice) {
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        playRawAudio(R.raw.fault);
+                    }
+                } else if ("Let".equalsIgnoreCase(callStr)) {
+                    if (playVoice) {
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        playRawAudio(R.raw.let);
+                    }
                 }
-                // Beep mode stays on the main thread via toneGenerator — not handled here
-            } else if ("Out".equalsIgnoreCase(callStr) || "Fault".equalsIgnoreCase(callStr)) {
+            } else {
+                // SINGLES/DOUBLES: play pre-recorded WAV for Out/Fault/Let (zero TTS latency).
+                // Double-beep for non-Out terminals stays on the main thread in processTrackEventJson.
+                // Skip if processInPointUpdate already fired audio concurrently with the display
+                // update — it sets lastEarlyAudioFiredMs to suppress this path as well.
+                if (System.currentTimeMillis() - lastEarlyAudioFiredMs < 2000) return;
                 if (playVoice) {
-                    lastEarlyAudioFiredMs = System.currentTimeMillis();
-                    engine.speak("Fault");
-                }
-            } else if ("Let".equalsIgnoreCase(callStr)) {
-                if (playVoice) {
-                    lastEarlyAudioFiredMs = System.currentTimeMillis();
-                    engine.speak("Let");
+                    if ("Out".equalsIgnoreCase(callStr)) {
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        playRawAudio(R.raw.out);
+                    } else if ("Fault".equalsIgnoreCase(callStr)) {
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        playRawAudio(R.raw.fault);
+                    } else if ("Let".equalsIgnoreCase(callStr)) {
+                        lastEarlyAudioFiredMs = System.currentTimeMillis();
+                        playRawAudio(R.raw.let);
+                    }
                 }
             }
         } catch (Exception e) {
             FileLogger.log(this, "Early audio error", e);
+        }
+    }
+
+    private void playRawAudio(int resId) {
+        try {
+            android.media.MediaPlayer mp = android.media.MediaPlayer.create(this, resId);
+            if (mp == null) return;
+            mp.setOnCompletionListener(android.media.MediaPlayer::release);
+            mp.start();
+        } catch (Exception e) {
+            FileLogger.log(this, "playRawAudio error", e);
         }
     }
 

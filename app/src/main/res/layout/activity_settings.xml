@@ -303,6 +303,24 @@
                 </RadioGroup>
             </LinearLayout>
 
+            <!-- End of Point Beeps: SINGLES/DOUBLES only. Plays a double-beep when a point
+                 ends without a voice call (e.g. double bounce, net crash, voice off). -->
+            <CheckBox
+                android:id="@+id/cbEndOfPointBeeps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="End of Point Beeps" />
+
+            <!-- In-Point Beeps: SINGLES/DOUBLES only. Plays a single beep each time a new
+                 bounce is confirmed mid-rally, for real-time audio feedback during a point. -->
+            <CheckBox
+                android:id="@+id/cbInCalls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:text="In-Point Beeps" />
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
