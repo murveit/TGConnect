@@ -169,6 +169,18 @@ public class MainActivity extends AppCompatActivity {
     private ServeScatterView serveScatterView;
     private PointVectorView pointVectorView;
 
+    // SINGLES/DOUBLES point status lines
+    private TextView tvPointStatus1;
+    private TextView tvPointStatus2;
+    // True after TRACK_EVENT_JSON received; cleared when the next POINT_UPDATE_JSON arrives
+    // (signals the new point has started). Controls what the status lines display.
+    private boolean waitingForServe = false;
+    // Summary text for the "Waiting for Serve" state, built from the last POINT_UPDATE_JSON.
+    private String lastPointSummaryLine = "";
+    // In-point state for the "Point Active" status line.
+    private String inPointServeSide = "";   // "Deuce" or "Ad" from first stroke
+    private int inPointStrokeCount = 0;
+
     // State Tracking for Serve Plotting
     private List<ServeScatterView.ServeImpact> serveImpacts = new ArrayList<>();
     private int totalServeCount = 0;
@@ -317,6 +329,8 @@ public class MainActivity extends AppCompatActivity {
         tvLastServe = findViewById(R.id.tvLastServe);
         serveScatterView = findViewById(R.id.serveScatterView);
         pointVectorView = findViewById(R.id.pointVectorView);
+        tvPointStatus1 = findViewById(R.id.tvPointStatus1);
+        tvPointStatus2 = findViewById(R.id.tvPointStatus2);
         ivRecordingIndicator = findViewById(R.id.ivRecordingIndicator);
         llDisconnectOverlay = findViewById(R.id.llDisconnectOverlay);
         tvNetworkStatus = findViewById(R.id.tvNetworkStatus);
@@ -709,7 +723,10 @@ public class MainActivity extends AppCompatActivity {
         String prevInPointCall = lastInPointCallFired;
         lastInPointCallFired = "";
         lastKnownStrokeCount = 0;
-        if (pointVectorView != null) pointVectorView.clearPoint();
+        // Do NOT clear the plot here — keep the last point's trajectory visible until the next
+        // serve is detected (first POINT_UPDATE_JSON of the new point). Transition to "Waiting".
+        waitingForServe = true;
+        mainHandler.post(this::updatePointStatus);
         final long receiveMs = System.currentTimeMillis();
         try {
             org.json.JSONObject json = new org.json.JSONObject(message);
@@ -1052,6 +1069,13 @@ public class MainActivity extends AppCompatActivity {
             if (tvAvgMph != null) tvAvgMph.setText("Spinning up...");
             if (serveScatterView != null) serveScatterView.setServes(serveImpacts);
             if (tvLastServe != null) tvLastServe.setText("");
+            // Clear the court plot and reset point-status state for the new session.
+            if (pointVectorView != null) pointVectorView.clearPoint();
+            waitingForServe = false;
+            lastPointSummaryLine = "";
+            inPointServeSide = "";
+            inPointStrokeCount = 0;
+            updatePointStatus();
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
             CommunicationService.nanoAudioActive = prefs.getBoolean(SettingsActivity.KEY_NANO_AUDIO, false);
@@ -1108,6 +1132,21 @@ public class MainActivity extends AppCompatActivity {
         CommunicationService.activeTennisTitle = uiTitle;
         tvTennisModeTitle.setText(uiTitle);
         switchState(STATE_ACTIVE_TENNIS);
+        // Sync button label to actual server tracking state.  This matters when the
+        // user navigates here after reconnecting: isTracking was set correctly by
+        // handleSystemState but the button still shows the stale pre-disconnect label.
+        updateTrackingButtons(CommunicationService.isTracking);
+        // If the server is not tracking, clear stale court graphics and point status
+        // so the screen starts clean.  If it IS tracking we leave the display alone
+        // (reconnect mid-point should preserve whatever is visible).
+        if (!CommunicationService.isTracking) {
+            if (pointVectorView != null) pointVectorView.clearPoint();
+            waitingForServe = false;
+            lastPointSummaryLine = "";
+            inPointServeSide = "";
+            inPointStrokeCount = 0;
+            updatePointStatus();
+        }
     }
 
     private void launchCalibration(int sensorId) {
@@ -1147,6 +1186,88 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /** Show or hide the two point-status lines and set their text based on current state. */
+    private void updatePointStatus() {
+        if (tvPointStatus1 == null || tvPointStatus2 == null) return;
+        boolean isSinglesDoubles = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+        if (!isSinglesDoubles) {
+            tvPointStatus1.setVisibility(View.GONE);
+            tvPointStatus2.setVisibility(View.GONE);
+            return;
+        }
+        tvPointStatus1.setVisibility(View.VISIBLE);
+        tvPointStatus2.setVisibility(View.VISIBLE);
+        if (waitingForServe) {
+            tvPointStatus1.setText("Waiting for Serve");
+            tvPointStatus2.setText(lastPointSummaryLine);
+        } else {
+            tvPointStatus1.setText("Point Active");
+            tvPointStatus2.setText(buildInPointStatusText());
+        }
+    }
+
+    /** Build "Ad serve + 2 hits..." or "3 hits..." for the active-point status line. */
+    private String buildInPointStatusText() {
+        if (inPointStrokeCount == 0) return "";
+        StringBuilder sb = new StringBuilder();
+        if (!inPointServeSide.isEmpty()) {
+            sb.append(inPointServeSide).append(" serve");
+            int returns = inPointStrokeCount - 1;
+            if (returns == 1) sb.append(" + 1 hit");
+            else if (returns > 1) sb.append(" + ").append(returns).append(" hits");
+        } else {
+            sb.append(inPointStrokeCount).append(inPointStrokeCount == 1 ? " hit" : " hits");
+        }
+        sb.append("...");
+        return sb.toString();
+    }
+
+    /**
+     * Build "Deuce serve + N hits, Call, Left/Right wins" from the last POINT_UPDATE_JSON.
+     * Special case: strokeCount==1 (serve only) → "Deuce serve, Call" (no "1 hit").
+     * winner_side "north" → "Left", "south" → "Right".
+     */
+    private String buildPointSummaryLine(org.json.JSONObject json, org.json.JSONArray strokes) {
+        int strokeCount = json.optInt("stroke_count", 0);
+        String finalCall = json.optString("final_call", "");
+        String winnerSide = json.optString("winner_side", "");
+        if (strokeCount == 0) return "";
+
+        // Derive serve side from the first stroke; fall back to inPointServeSide if needed.
+        String serveSide = "";
+        if (strokes != null && strokes.length() > 0) {
+            try {
+                org.json.JSONObject first = strokes.getJSONObject(0);
+                if ("serve".equals(first.optString("type", ""))) {
+                    serveSide = first.optString("serve_side", "");
+                    if (serveSide.isEmpty()) {
+                        double hx = first.optDouble("x", 0.0);
+                        double hy = first.optDouble("y", 0.0);
+                        if (hy > 0) serveSide = hx < 0 ? "Deuce" : "Ad"; // North baseline
+                        else        serveSide = hx > 0 ? "Deuce" : "Ad"; // South baseline
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (serveSide.isEmpty()) serveSide = inPointServeSide;
+
+        StringBuilder sb = new StringBuilder();
+        if (!serveSide.isEmpty()) {
+            sb.append(serveSide).append(" serve");
+            if (strokeCount > 1) {
+                int hits = strokeCount - 1;
+                sb.append(" + ").append(hits).append(hits == 1 ? " hit" : " hits");
+            }
+        } else {
+            sb.append(strokeCount).append(strokeCount == 1 ? " hit" : " hits");
+        }
+        if (!finalCall.isEmpty()) sb.append(", ").append(finalCall);
+        if ("north".equals(winnerSide)) sb.append(", Left wins");
+        else if ("south".equals(winnerSide)) sb.append(", Right wins");
+        return sb.toString();
+    }
+
     private void processInPointUpdate(String message) {
         boolean isSinglesDoubles = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
                 || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
@@ -1155,7 +1276,45 @@ public class MainActivity extends AppCompatActivity {
         try {
             org.json.JSONObject json = new org.json.JSONObject(message);
             int strokeCount = json.optInt("stroke_count", 0);
+            boolean hasPendingHit = json.optBoolean("has_pending_hit", false);
+            boolean partial = json.optBoolean("partial", true);
             org.json.JSONArray strokes = json.optJSONArray("strokes");
+
+            // Always keep the summary line current; used for "Waiting for Serve" display.
+            // The final POINT_UPDATE_JSON (partial=false) from voice_ready has the complete picture.
+            lastPointSummaryLine = buildPointSummaryLine(json, strokes);
+
+            // On the first POINT_UPDATE_JSON after TRACK_EVENT_JSON, the new point has started:
+            // clear the previous point's trajectory and transition to "Point Active".
+            if (waitingForServe) {
+                if (pointVectorView != null) pointVectorView.clearPoint();
+                waitingForServe = false;
+                inPointServeSide = "";
+                inPointStrokeCount = 0;
+            }
+
+            // Extract serve side from the first stroke if it is a serve.
+            // Re-check on every update while still unset, since pending serves lack serve_side
+            // until the first resolved update arrives (or Python now includes it for pending serves).
+            // Fallback: if serve_side is absent from JSON, derive it from the hit x/y position
+            // using the same formula as engine_physics.calculate_metrics().
+            if (inPointServeSide.isEmpty() && strokes != null && strokes.length() > 0) {
+                try {
+                    org.json.JSONObject first = strokes.getJSONObject(0);
+                    if ("serve".equals(first.optString("type", ""))) {
+                        String ss = first.optString("serve_side", "");
+                        if (ss.isEmpty()) {
+                            double hx = first.optDouble("x", 0.0);
+                            double hy = first.optDouble("y", 0.0);
+                            if (hy > 0) ss = hx < 0 ? "Deuce" : "Ad"; // North baseline
+                            else        ss = hx > 0 ? "Deuce" : "Ad"; // South baseline
+                        }
+                        inPointServeSide = ss;
+                    }
+                } catch (Exception ignored) {}
+            }
+            // Include the pending hit in the count so the status matches the visual label shown.
+            inPointStrokeCount = strokeCount + (hasPendingHit ? 1 : 0);
 
             java.util.List<PointVectorView.PointEvent> eventList = new java.util.ArrayList<>();
             if (strokes != null) {
@@ -1163,16 +1322,30 @@ public class MainActivity extends AppCompatActivity {
                     org.json.JSONObject s = strokes.getJSONObject(i);
                     float hx = (float) s.optDouble("x", 0.0);
                     float hy = (float) s.optDouble("y", 0.0);
-                    org.json.JSONObject bounce = s.optJSONObject("bounce");
-                    float bx = bounce != null ? (float) bounce.optDouble("x", 0.0) : 0f;
-                    float by = bounce != null ? (float) bounce.optDouble("y", 0.0) : 0f;
+                    boolean isPending = s.optBoolean("pending", false);
+                    float bx = 0f, by = 0f, b2x = 0f, b2y = 0f;
+                    if (!isPending) {
+                        org.json.JSONObject bounce = s.optJSONObject("bounce");
+                        bx = bounce != null ? (float) bounce.optDouble("x", 0.0) : 0f;
+                        by = bounce != null ? (float) bounce.optDouble("y", 0.0) : 0f;
+                        org.json.JSONObject bounce2 = s.optJSONObject("bounce2");
+                        if (bounce2 != null) {
+                            b2x = (float) bounce2.optDouble("x", 0.0);
+                            b2y = (float) bounce2.optDouble("y", 0.0);
+                        }
+                    }
                     String call = s.optString("call_str", "In");
                     String type = s.optString("type", "hit");
-                    eventList.add(new PointVectorView.PointEvent(hx, hy, bx, by, call, type));
+                    PointVectorView.PointEvent pe = new PointVectorView.PointEvent(hx, hy, bx, by, call, type);
+                    pe.pending  = isPending;
+                    pe.bounce2X = b2x;
+                    pe.bounce2Y = b2y;
+                    eventList.add(pe);
                 }
             }
 
             pointVectorView.setPointData(eventList);
+            mainHandler.post(this::updatePointStatus);
 
             // Voice audio: fire immediately when the last stroke resolves to a terminal call,
             // concurrent with the PointVectorView update. This eliminates the structural 0.5–1.0 s
@@ -1202,7 +1375,7 @@ public class MainActivity extends AppCompatActivity {
                 } catch (Exception ignored) {}
             }
 
-            // In-Point Beep: single short beep when a new bounce is confirmed mid-rally
+            // In-Point Beep: single short beep when a new stroke is confirmed mid-rally
             if (strokeCount > lastKnownStrokeCount) {
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
                 boolean inCallsEnabled = prefs.getBoolean(SettingsActivity.KEY_IN_CALLS, false);

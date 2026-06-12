@@ -85,7 +85,7 @@
                 android:id="@+id/btnRetake"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:src="@android:drawable/ic_menu_revert"
+                android:src="@android:drawable/ic_menu_camera"
                 app:backgroundTint="#424242"
                 app:tint="#FFFFFF"
                 app:fabSize="normal"
@@ -93,6 +93,7 @@
                 android:contentDescription="Retake Photo" />
 
             <TextView
+                android:id="@+id/tvRetakeLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Retake"
@@ -103,7 +104,41 @@
 
         <Space
             android:layout_width="match_parent"
-            android:layout_height="24dp" />
+            android:layout_height="12dp" />
+
+        <!-- Contextual third button: "Add Strap" (no strap used) or "Remove Strap" (strap used) -->
+        <LinearLayout
+            android:id="@+id/llThird"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btnThird"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_add"
+                app:backgroundTint="#1565C0"
+                app:tint="#FFFFFF"
+                app:fabSize="mini"
+                app:elevation="2dp"
+                android:contentDescription="Strap Action" />
+
+            <TextView
+                android:id="@+id/tvThirdLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Add Strap"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="12dp" />
 
         <LinearLayout
             android:id="@+id/llConfirm"

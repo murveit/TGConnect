@@ -20,13 +20,18 @@ package com.murveit.tgcontrol;
  *   VIEW_MIN_Y = -13f (south), VIEW_MAX_Y = 13f (north).  North baseline at screen top.
  * - Court lines drawn for both half-courts: baselines, singles/doubles sidelines,
  *   service lines, center service lines, net.  Doubles alleys rendered at half opacity.
- * - For each PointEvent: a solid coloured line from (hitX, hitY) to (bounceX, bounceY).
+ * - For each PointEvent with a confirmed bounce: a solid coloured line from
+ *   (hitX, hitY) to (bounceX, bounceY), a dashed connector from the previous
+ *   bounce to this hit, and circular dots at both positions.
  *   Colour for prior strokes: green=In, red=Out/Fault, yellow=Let.
- * - Most recent stroke always drawn in bright yellow (RECENT_STROKE_COLOR) with a thicker
- *   line width so it stands out at a glance regardless of its call type.
- * - Consecutive events connected by a dashed grey line: bounceN → hitN+1.
- * - Circular dots drawn at each hit and bounce position.
+ * - Most recent resolved stroke always drawn in bright yellow (RECENT_STROKE_COLOR)
+ *   with a thicker line width so it stands out at a glance.
  * - White ring on most-recent bounce dot provides additional emphasis.
+ * - Pending stroke (ball in flight, pending=true or bounceX/Y==0): draws the
+ *   dashed connector from the previous bounce to this hit, the hit label, and a
+ *   dashed yellow ring at the hit position; no arc, no bounce dot.
+ * - Hit position is labelled: "S" for serve (index 0), "R" for return (index 1),
+ *   numeric "3", "4", … for subsequent strokes.  Label color matches the stroke color.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Pushes 2D vector shapes to the hardware-accelerated Android Canvas.
@@ -46,10 +51,12 @@ import java.util.List;
 public class PointVectorView extends View {
 
     public static class PointEvent {
-        public float hitX, hitY;       // Strike position in court meters
-        public float bounceX, bounceY; // Bounce position in court meters
-        public String call;            // "In", "Out", "Fault", "Let"
-        public String type;            // "serve", "hit"
+        public float hitX, hitY;         // Strike position in court meters
+        public float bounceX, bounceY;   // First bounce position in court meters (ignored when pending)
+        public float bounce2X, bounce2Y; // Second bounce (double-bounce only); 0,0 = absent
+        public String call;              // "In", "Out", "Fault", "Let"
+        public String type;              // "serve", "hit"
+        public boolean pending;          // true = ball in flight, no confirmed bounce yet
 
         public PointEvent(float hitX, float hitY, float bounceX, float bounceY,
                           String call, String type) {
@@ -59,6 +66,9 @@ public class PointVectorView extends View {
             this.bounceY = bounceY;
             this.call    = call;
             this.type    = type;
+            this.pending  = false;
+            this.bounce2X = 0f;
+            this.bounce2Y = 0f;
         }
     }
 
@@ -69,10 +79,11 @@ public class PointVectorView extends View {
     private static final float COURT_BASELINE_DEPTH      = 11.885f;
 
     // --- View coordinate bounds (meters): extra margin around the full court ---
+    // ±16 m gives ~4 m behind the baseline (11.885 m) for behind-baseline hit positions.
     private static final float VIEW_MIN_X = -7.0f;
     private static final float VIEW_MAX_X =  7.0f;
-    private static final float VIEW_MIN_Y = -13.5f; // south side
-    private static final float VIEW_MAX_Y =  13.5f; // north side
+    private static final float VIEW_MIN_Y = -16.0f; // south side
+    private static final float VIEW_MAX_Y =  16.0f; // north side
 
     // --- Visual sizing constants ---
     private static final float HIT_DOT_RADIUS    = 10f;
@@ -81,22 +92,29 @@ public class PointVectorView extends View {
     private static final float RECENT_STROKE_W   = 10f; // thicker for most-recent stroke
     private static final float HIGHLIGHT_RING_W  =  5f;
     private static final float LINE_STROKE_W     =  4f;
+    // Text height for hit labels (S/R/3/4/…).
+    private static final float HIT_LABEL_TEXT_SIZE = 44f;
+    // Gap between the label centre and the start/end of lines so they don't overdraw the letter.
+    private static final float HIT_LABEL_LINE_OFFSET_PX = 24f;
 
     // Bright yellow for the most-recent stroke so it stands out from call-colored prior strokes.
     private static final String RECENT_STROKE_COLOR = "#FFFF00";
 
     // --- Paints ---
-    private final Paint courtPaint    = new Paint();
-    private final Paint linePaint     = new Paint();
-    private final Paint alleyPaint    = new Paint(); // dimmer for doubles alleys
-    private final Paint netPaint      = new Paint();
-    private final Paint inPaint       = new Paint();
-    private final Paint outPaint      = new Paint();
-    private final Paint letPaint      = new Paint();
+    private final Paint courtPaint      = new Paint();
+    private final Paint linePaint       = new Paint();
+    private final Paint alleyPaint      = new Paint(); // dimmer for doubles alleys
+    private final Paint netPaint        = new Paint();
+    private final Paint inPaint         = new Paint();
+    private final Paint outPaint        = new Paint();
+    private final Paint letPaint        = new Paint();
     private final Paint connectPaint    = new Paint(); // dashed connector between events
     private final Paint highlightPaint  = new Paint(); // white ring on most-recent bounce dot
     private final Paint recentPaint     = new Paint(); // yellow for most-recent stroke and dots
-    private final Paint dotPaint        = new Paint();
+    private final Paint dotPaint         = new Paint();
+    private final Paint pendingRingPaint = new Paint(); // dashed ring for in-flight (pending) hit
+    private final Paint serveRingPaint   = new Paint(); // solid ring always drawn around "S" label
+    private final Paint hitLabelPaint    = new Paint(); // text labels (S/R/3/4/…) at hit positions
 
     private List<PointEvent> events = new ArrayList<>();
 
@@ -161,6 +179,25 @@ public class PointVectorView extends View {
 
         dotPaint.setStyle(Paint.Style.FILL);
         dotPaint.setAntiAlias(true);
+
+        // Dashed ring drawn around the hit label when the ball is in flight (pending stroke).
+        pendingRingPaint.setColor(Color.parseColor(RECENT_STROKE_COLOR));
+        pendingRingPaint.setStyle(Paint.Style.STROKE);
+        pendingRingPaint.setStrokeWidth(3f);
+        pendingRingPaint.setAntiAlias(true);
+        pendingRingPaint.setPathEffect(new DashPathEffect(new float[]{8f, 6f}, 0f));
+
+        // Solid ring drawn around the "S" serve label to distinguish it from R/3/4/… labels.
+        serveRingPaint.setStyle(Paint.Style.STROKE);
+        serveRingPaint.setStrokeWidth(2.5f);
+        serveRingPaint.setAntiAlias(true);
+
+        // Bold centered text for hit labels (S, R, 3, 4, …).
+        hitLabelPaint.setStyle(Paint.Style.FILL);
+        hitLabelPaint.setAntiAlias(true);
+        hitLabelPaint.setTextSize(HIT_LABEL_TEXT_SIZE);
+        hitLabelPaint.setTextAlign(Paint.Align.CENTER);
+        hitLabelPaint.setFakeBoldText(true);
     }
 
     public void setPointData(List<PointEvent> data) {
@@ -187,6 +224,35 @@ public class PointVectorView extends View {
         if ("In".equalsIgnoreCase(call))                                     return inPaint;
         if ("Let".equalsIgnoreCase(call))                                    return letPaint;
         return outPaint; // Out or Fault
+    }
+
+    // Returns the hit label for stroke at list index i: "S" (serve), "R" (return), then "3","4",…
+    private String hitLabel(int i) {
+        if (i == 0) return "S";
+        if (i == 1) return "R";
+        return String.valueOf(i + 1);
+    }
+
+    // Draws the hit label centred at (x, y) using the given fill color.
+    // For the serve (index 0), also draws a solid ring around the label.
+    private void drawHitLabel(Canvas canvas, int strokeIndex, float x, float y, int color) {
+        hitLabelPaint.setColor(color);
+        Paint.FontMetrics fm = hitLabelPaint.getFontMetrics();
+        float textY = y - (fm.ascent + fm.descent) / 2f;
+        canvas.drawText(hitLabel(strokeIndex), x, textY, hitLabelPaint);
+        if (strokeIndex == 0) {
+            serveRingPaint.setColor(color);
+            canvas.drawCircle(x, y, HIT_LABEL_TEXT_SIZE / 2f + 6f, serveRingPaint);
+        }
+    }
+
+    // Returns the point offset by `dist` pixels from (fromX,fromY) toward (toX,toY).
+    // Returns the original point unchanged if the two points are closer than dist.
+    private float[] offsetToward(float fromX, float fromY, float toX, float toY, float dist) {
+        float dx = toX - fromX, dy = toY - fromY;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len <= dist) return new float[]{fromX, fromY};
+        return new float[]{fromX + dx / len * dist, fromY + dy / len * dist};
     }
 
     @Override
@@ -248,31 +314,68 @@ public class PointVectorView extends View {
             boolean isLast = (i == events.size() - 1);
             Paint vPaint = paintForCall(ev.call);
 
-            float hx = mapX(ev.hitX,    w);
-            float hy = mapY(ev.hitY,    h);
-            float bx = mapX(ev.bounceX, w);
-            float by = mapY(ev.bounceY, h);
+            float hx = mapX(ev.hitX, w);
+            float hy = mapY(ev.hitY, h);
 
-            // Dashed connector: previous bounce → this hit (skip for first event)
-            if (i > 0) {
-                PointEvent prev = events.get(i - 1);
-                canvas.drawLine(mapX(prev.bounceX, w), mapY(prev.bounceY, h),
-                                hx, hy, connectPaint);
-            }
+            // A stroke is "pending" (ball in flight, no confirmed bounce) when either
+            // the explicit flag is set or the bounce coords are the unset sentinel (0,0).
+            boolean hasBounce = !ev.pending && (ev.bounceX != 0f || ev.bounceY != 0f);
 
-            // Vector: hit → bounce.
-            // Most-recent stroke: bright yellow + thicker. Prior strokes: call-color (green/red/yellow).
-            Paint activePaint = isLast ? recentPaint : vPaint;
-            canvas.drawLine(hx, hy, bx, by, activePaint);
+            if (!hasBounce) {
+                // Ball is in flight — no confirmed bounce yet.
+                // Dashed connector from previous stroke's final bounce to this hit.
+                if (i > 0) {
+                    PointEvent prev = events.get(i - 1);
+                    boolean prevHasB2 = prev.bounce2X != 0f || prev.bounce2Y != 0f;
+                    float pbx = prevHasB2 ? mapX(prev.bounce2X, w) : mapX(prev.bounceX, w);
+                    float pby = prevHasB2 ? mapY(prev.bounce2Y, h) : mapY(prev.bounceY, h);
+                    float[] end = offsetToward(hx, hy, pbx, pby, HIT_LABEL_LINE_OFFSET_PX);
+                    canvas.drawLine(pbx, pby, end[0], end[1], connectPaint);
+                }
+                // Hit label + dashed ring; no arc, no bounce dot.
+                drawHitLabel(canvas, i, hx, hy, recentPaint.getColor());
+                canvas.drawCircle(hx, hy, HIT_LABEL_TEXT_SIZE / 2f + 8f, pendingRingPaint);
+            } else {
+                float bx = mapX(ev.bounceX, w);
+                float by = mapY(ev.bounceY, h);
+                boolean hasB2 = ev.bounce2X != 0f || ev.bounce2Y != 0f;
+                float b2x = hasB2 ? mapX(ev.bounce2X, w) : 0f;
+                float b2y = hasB2 ? mapY(ev.bounce2Y, h) : 0f;
+                // "Final" position: B2 for double-bounce, B1 otherwise — connector origin.
+                float finalBx = hasB2 ? b2x : bx;
+                float finalBy = hasB2 ? b2y : by;
 
-            // Hit dot and bounce dot use the same color as their stroke.
-            dotPaint.setColor(activePaint.getColor());
-            canvas.drawCircle(hx, hy, HIT_DOT_RADIUS, dotPaint);
-            canvas.drawCircle(bx, by, BOUNCE_DOT_RADIUS, dotPaint);
+                // Dashed connector: previous stroke's final bounce → this hit.
+                if (i > 0) {
+                    PointEvent prev = events.get(i - 1);
+                    boolean prevHasB2 = prev.bounce2X != 0f || prev.bounce2Y != 0f;
+                    float pbx = prevHasB2 ? mapX(prev.bounce2X, w) : mapX(prev.bounceX, w);
+                    float pby = prevHasB2 ? mapY(prev.bounce2Y, h) : mapY(prev.bounceY, h);
+                    float[] end = offsetToward(hx, hy, pbx, pby, HIT_LABEL_LINE_OFFSET_PX);
+                    canvas.drawLine(pbx, pby, end[0], end[1], connectPaint);
+                }
 
-            // White ring on most-recent bounce for additional emphasis
-            if (isLast) {
-                canvas.drawCircle(bx, by, BOUNCE_DOT_RADIUS + 4f, highlightPaint);
+                // Vector: start away from the label toward the bounce.
+                // Most-recent stroke: bright yellow + thicker. Prior: call-color.
+                Paint activePaint = isLast ? recentPaint : vPaint;
+                float[] vecStart = offsetToward(hx, hy, bx, by, HIT_LABEL_LINE_OFFSET_PX);
+                canvas.drawLine(vecStart[0], vecStart[1], bx, by, activePaint);
+
+                // Hit label and bounce dots use the same color as their stroke.
+                drawHitLabel(canvas, i, hx, hy, activePaint.getColor());
+                dotPaint.setColor(activePaint.getColor());
+                canvas.drawCircle(bx, by, BOUNCE_DOT_RADIUS, dotPaint);
+
+                // Double-bounce: draw B1→B2 segment and a second bounce dot.
+                if (hasB2) {
+                    canvas.drawLine(bx, by, b2x, b2y, activePaint);
+                    canvas.drawCircle(b2x, b2y, BOUNCE_DOT_RADIUS, dotPaint);
+                }
+
+                // White ring on the final bounce position for additional emphasis.
+                if (isLast) {
+                    canvas.drawCircle(finalBx, finalBy, BOUNCE_DOT_RADIUS + 4f, highlightPaint);
+                }
             }
         }
     }

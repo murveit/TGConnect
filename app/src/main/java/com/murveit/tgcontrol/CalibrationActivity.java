@@ -23,9 +23,15 @@ package com.murveit.tgcontrol;
  * When the user taps "Confirm", the mathematical inverse of the current affine Matrix is calculated. 
  * The screen's center point is multiplied through this inverted matrix to yield the exact sub-pixel 
  * coordinate on the underlying 1080p raw Bitmap.
- * - State Machine: Drives the user through 4 discrete corner selections, managing UI button visibility, 
- * tracking extracted coordinates in a `Float` array, and orchestrating the TCP protocol (START -> PROCESS -> CONFIRM).
- * - Lifecycle Resets: Resets the viewport (zoom and pan) after every confirmation to ensure the user 
+ * - State Machine: Drives the user through 4 discrete corner selections plus an optional net-strap
+ * click, managing UI button visibility, tracking extracted coordinates in a `Float` array, and
+ * orchestrating the TCP protocol (START -> PROCESS -> CONFIRM).
+ * - Three-button STATE_REVIEW: Accept (green), Retake (gray, full restart), and a contextual
+ * blue third button — "Add Strap" when the current calibration used no strap, "Remove Strap"
+ * when it did. "Add Strap" returns to STATE_TARGET_NET_STRAP with the original calibration image
+ * and pink dots marking all previous strap attempts. "Remove Strap" strips the strap coords,
+ * resubmits the 8-anchor calibration, and shows a fresh validation image with "Add Strap" again.
+ * - Lifecycle Resets: Resets the viewport (zoom and pan) after every confirmation to ensure the user
  * starts with a centered full-view perspective for the next target.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
@@ -35,7 +41,10 @@ package com.murveit.tgcontrol;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.PointF;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.GestureDetector;
@@ -70,13 +79,23 @@ public class CalibrationActivity extends AppCompatActivity {
     private static final int STATE_TARGET_FAR_IN = 2;
     private static final int STATE_TARGET_NEAR_OUT = 3;
     private static final int STATE_TARGET_NEAR_IN = 4;
-    private static final int STATE_VALIDATING = 5;
-    private static final int STATE_REVIEW = 6;
+    private static final int STATE_TARGET_NET_STRAP = 5; // optional net-strap top click
+    private static final int STATE_VALIDATING = 6;
+    private static final int STATE_REVIEW = 7;
 
     // --- State Tracking ---
     private int sensorId;
     private int currentState = STATE_LOADING;
     private Bitmap currentBitmap = null;
+    // Original calibration image from START_CALIBRATION — never replaced by the
+    // validation composite, so it remains available for redo-strap overlays.
+    private Bitmap originalCalibBitmap = null;
+    // Previous net-strap click positions in bitmap coords, accumulated across redo
+    // cycles and drawn as dots so the user can see where they clicked before.
+    private List<PointF> previousStrapClicks = new ArrayList<>();
+    // True when the last submitted calibration included a net-strap click; drives
+    // "Redo Strap" label on the Retake button in STATE_REVIEW.
+    private boolean lastCalibUsedStrap = false;
     private List<Float> extractedCoords = new ArrayList<>();
     private float baseScale = 1.0f;
 
@@ -93,11 +112,15 @@ public class CalibrationActivity extends AppCompatActivity {
     private ImageView ivCalibrationImage;
     private TextView tvInstruction;
     private TextView tvConfirmLabel;
+    private TextView tvRetakeLabel;
+    private TextView tvThirdLabel;
     private FloatingActionButton btnConfirm;
     private FloatingActionButton btnRetake;
+    private FloatingActionButton btnThird;
     private ImageButton btnCancel;
     private LinearLayout llRetake;
     private LinearLayout llConfirm;
+    private LinearLayout llThird;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,17 +142,44 @@ public class CalibrationActivity extends AppCompatActivity {
         ivCalibrationImage = findViewById(R.id.ivCalibrationImage);
         tvInstruction = findViewById(R.id.tvInstruction);
         tvConfirmLabel = findViewById(R.id.tvConfirmLabel);
+        tvRetakeLabel = findViewById(R.id.tvRetakeLabel);
+        tvThirdLabel = findViewById(R.id.tvThirdLabel);
         btnConfirm = findViewById(R.id.btnConfirm);
         btnRetake = findViewById(R.id.btnRetake);
+        btnThird = findViewById(R.id.btnThird);
         btnCancel = findViewById(R.id.btnCancel);
         llRetake = findViewById(R.id.llRetake);
         llConfirm = findViewById(R.id.llConfirm);
+        llThird = findViewById(R.id.llThird);
 
         setupTouchMatrix();
         setupObservers();
-        
+
         btnConfirm.setOnClickListener(v -> handleConfirmAction());
-        btnRetake.setOnClickListener(v -> startCalibrationFlow());
+        btnRetake.setOnClickListener(v -> {
+            if (currentState == STATE_TARGET_NET_STRAP) {
+                // "Capture" — lock the crosshair as the net strap point (10 coords total).
+                extractScreenCenterToBitmapPixel();
+                // Record position for the dots overlay on future redo attempts.
+                int n = extractedCoords.size();
+                previousStrapClicks.add(new PointF(extractedCoords.get(n - 2), extractedCoords.get(n - 1)));
+                lastCalibUsedStrap = true;
+                advanceState(STATE_VALIDATING);
+                sendProcessCalibration();
+            } else if (currentState == STATE_REVIEW && lastCalibUsedStrap) {
+                // "Redo Strap" — keep the 4 anchor coords, drop the strap, and return
+                // to the strap-click step with dots showing previous attempts.
+                while (extractedCoords.size() > 8) extractedCoords.remove(extractedCoords.size() - 1);
+                Bitmap withDots = drawStrapDotsOnBitmap(originalCalibBitmap);
+                currentBitmap = withDots;
+                ivCalibrationImage.setImageBitmap(withDots);
+                advanceState(STATE_TARGET_NET_STRAP);
+                ivCalibrationImage.post(() -> resetMatrixForBitmap(currentBitmap));
+            } else {
+                startCalibrationFlow();
+            }
+        });
+        btnThird.setOnClickListener(v -> handleThirdAction());
         btnCancel.setOnClickListener(v -> finish()); // Gracefully exits the activity
 
         // Kick off the state machine
@@ -225,12 +275,13 @@ public class CalibrationActivity extends AppCompatActivity {
 
             if (currentState == STATE_LOADING && "calibration_baseline".equals(target)) {
                 currentBitmap = bmp;
+                originalCalibBitmap = bmp; // Preserved — never replaced by the validation composite
                 ivCalibrationImage.setImageBitmap(bmp);
                 ivCalibrationImage.post(() -> resetMatrixForBitmap(bmp)); // Wait for UI Layout pass
                 advanceState(STATE_TARGET_FAR_OUT);
-                
+
             } else if (currentState == STATE_VALIDATING && "calibration_validation".equals(target)) {
-                currentBitmap = bmp;
+                currentBitmap = bmp; // Validation composite replaces current; originalCalibBitmap stays
                 ivCalibrationImage.setImageBitmap(bmp);
                 ivCalibrationImage.post(() -> resetMatrixForBitmap(bmp));
                 advanceState(STATE_REVIEW);
@@ -280,6 +331,9 @@ public class CalibrationActivity extends AppCompatActivity {
 
     private void startCalibrationFlow() {
         extractedCoords.clear();
+        previousStrapClicks.clear();
+        lastCalibUsedStrap = false;
+        originalCalibBitmap = null;
         currentBitmap = null;
         ivCalibrationImage.setImageBitmap(null);
         advanceState(STATE_LOADING);
@@ -307,30 +361,59 @@ public class CalibrationActivity extends AppCompatActivity {
     private void handleConfirmAction() {
         if (currentState >= STATE_TARGET_FAR_OUT && currentState <= STATE_TARGET_NEAR_IN) {
             extractScreenCenterToBitmapPixel();
-            
+
             if (currentState == STATE_TARGET_NEAR_IN) {
-                // All 4 points collected! Fire math processor.
-                advanceState(STATE_VALIDATING);
-                String baselineSide = (sensorId == 0) ? "left" : "right";
-                
-                StringBuilder sb = new StringBuilder();
-                sb.append("PROCESS_CALIBRATION:").append(sensorId).append(",")
-                  .append(baselineSide).append(",").append(TCP_SCALE_FACTOR);
-                  
-                for (Float f : extractedCoords) {
-                    sb.append(",").append(f);
-                }
-                sendCommand(sb.toString());
+                // All 4 anchor points collected — advance to optional net-strap step.
+                advanceState(STATE_TARGET_NET_STRAP);
+                ivCalibrationImage.post(() -> resetMatrixForBitmap(currentBitmap));
             } else {
                 advanceState(currentState + 1);
                 // RESET VIEWPORT: Ensures every click starts from a fresh, centered perspective.
                 // We use post() to ensure the advanceState layout changes have settled.
                 ivCalibrationImage.post(() -> resetMatrixForBitmap(currentBitmap));
             }
-            
+
+        } else if (currentState == STATE_TARGET_NET_STRAP) {
+            // "Skip" (green Confirm button) — proceed with 8 anchor coords only, no strap.
+            lastCalibUsedStrap = false;
+            advanceState(STATE_VALIDATING);
+            sendProcessCalibration();
+
         } else if (currentState == STATE_REVIEW) {
             sendCommand("CONFIRM_CALIBRATION:" + sensorId);
         }
+    }
+
+    private void handleThirdAction() {
+        if (currentState != STATE_REVIEW) return;
+        if (lastCalibUsedStrap) {
+            // "Remove Strap" — strip the strap coords and resubmit with 8 anchors only.
+            while (extractedCoords.size() > 8) extractedCoords.remove(extractedCoords.size() - 1);
+            lastCalibUsedStrap = false;
+            advanceState(STATE_VALIDATING);
+            sendProcessCalibration();
+        } else {
+            // "Add Strap" — return to the strap-click step, keeping the 4 anchor coords.
+            // Show the original calibration image with dots at any previous strap attempts.
+            Bitmap withDots = drawStrapDotsOnBitmap(originalCalibBitmap);
+            currentBitmap = withDots;
+            ivCalibrationImage.setImageBitmap(withDots);
+            advanceState(STATE_TARGET_NET_STRAP);
+            ivCalibrationImage.post(() -> resetMatrixForBitmap(currentBitmap));
+        }
+    }
+
+    /** Builds and sends PROCESS_CALIBRATION with whatever is in extractedCoords.
+     *  8 values = 4 anchor points only; 10 values = 4 anchors + net strap. */
+    private void sendProcessCalibration() {
+        String baselineSide = (sensorId == 0) ? "left" : "right";
+        StringBuilder sb = new StringBuilder();
+        sb.append("PROCESS_CALIBRATION:").append(sensorId).append(",")
+          .append(baselineSide).append(",").append(TCP_SCALE_FACTOR);
+        for (Float f : extractedCoords) {
+            sb.append(",").append(f);
+        }
+        sendCommand(sb.toString());
     }
 
     private void extractScreenCenterToBitmapPixel() {
@@ -364,6 +447,7 @@ public class CalibrationActivity extends AppCompatActivity {
                 tvInstruction.setText("Waking Camera Hardware...");
                 llConfirm.setVisibility(View.GONE);
                 llRetake.setVisibility(View.GONE);
+                llThird.setVisibility(View.GONE);
                 break;
                 
             case STATE_TARGET_FAR_OUT:
@@ -384,20 +468,55 @@ public class CalibrationActivity extends AppCompatActivity {
             case STATE_TARGET_NEAR_IN:
                 tvInstruction.setText("4/4\nService Line\n&\nNear Sideline");
                 break;
-                
+
+            case STATE_TARGET_NET_STRAP:
+                tvInstruction.setText("5/5 (Optional)\nZoom to net strap\nthen tap Capture.\nOr tap Skip.");
+                tvRetakeLabel.setText("Capture");
+                tvConfirmLabel.setText("Skip");
+                btnRetake.setImageResource(android.R.drawable.ic_menu_camera);
+                break;
+
             case STATE_VALIDATING:
                 tvInstruction.setText("Processing 4K Math...");
+                tvRetakeLabel.setText("Retake");
                 llConfirm.setVisibility(View.GONE);
                 llRetake.setVisibility(View.GONE);
+                llThird.setVisibility(View.GONE);
                 break;
-                
+
             case STATE_REVIEW:
                 tvInstruction.setText("Review Algorithm Fit\n(Check Blue & Green Lines)");
                 llConfirm.setVisibility(View.VISIBLE);
                 llRetake.setVisibility(View.VISIBLE);
+                llThird.setVisibility(View.VISIBLE);
                 tvConfirmLabel.setText("Accept");
+                // When a strap was used: gray button redoes just the strap (keeps 4 anchors).
+                // When no strap: gray button does a full restart.
+                tvRetakeLabel.setText(lastCalibUsedStrap ? "Redo Strap" : "Retake");
+                btnRetake.setImageResource(android.R.drawable.ic_menu_rotate);
+                tvThirdLabel.setText(lastCalibUsedStrap ? "Remove Strap" : "Add Strap");
+                btnThird.setImageResource(lastCalibUsedStrap
+                        ? android.R.drawable.ic_menu_delete
+                        : android.R.drawable.ic_menu_add);
                 break;
         }
+    }
+
+    /** Returns a mutable copy of source with a magenta dot drawn at each previous
+     *  strap click position. Dot radius scales with image width so it is visible
+     *  at both 1080p and 4K. */
+    private Bitmap drawStrapDotsOnBitmap(Bitmap source) {
+        if (source == null) return null;
+        Bitmap mutable = source.copy(Bitmap.Config.ARGB_8888, true);
+        Canvas canvas = new Canvas(mutable);
+        int radius = Math.max(2, source.getWidth() / 1200); // ~1-2px at 1080p, ~3px at 4K
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(0xFFFF69B4); // pink
+        fill.setStyle(Paint.Style.FILL);
+        for (PointF pt : previousStrapClicks) {
+            canvas.drawCircle(pt.x, pt.y, radius, fill);
+        }
+        return mutable;
     }
 
     private void sendCommand(String cmd) {
