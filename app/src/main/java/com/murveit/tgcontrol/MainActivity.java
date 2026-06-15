@@ -172,6 +172,8 @@ public class MainActivity extends AppCompatActivity {
     // SINGLES/DOUBLES point status lines
     private TextView tvPointStatus1;
     private TextView tvPointStatus2;
+    // Running point counter for the current session; shown as "N: " prefix on status line 2.
+    private int currentPointNumber = 0;
     // True after TRACK_EVENT_JSON received; cleared when the next POINT_UPDATE_JSON arrives
     // (signals the new point has started). Controls what the status lines display.
     private boolean waitingForServe = false;
@@ -191,6 +193,12 @@ public class MainActivity extends AppCompatActivity {
     // Call string (Out/Fault/Let) for which audio was already fired from processInPointUpdate;
     // empty string means no audio has fired yet for the current point. Reset per point.
     private String lastInPointCallFired = "";
+    // terminal_reason from the last POINT_UPDATE_JSON; used by processTrackEventJson to
+    // suppress voice for groundstroke net crashes ("Net Crash") and winners ("Double Bounce").
+    private String lastTerminalReason = "";
+    // True from the moment Start is pressed until the server signals it is active
+    // (TRACK_EVENT: * Active).  Used to show "Spinning up..." in the point status area.
+    private boolean isSpinningUp = false;
     private boolean sessionRecording = false;
 
     // Recording indicator icon (right side of title bar)
@@ -588,13 +596,22 @@ public class MainActivity extends AppCompatActivity {
 
             if ("TRACK_EVENT".equals(status)) {
                 appendToTrackingLog(message);
-                // When server signals readiness in Serve Practice, update the plot status lines
-                if (message != null && message.endsWith(" Active") &&
-                        MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
-                    mainHandler.post(() -> {
-                        if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
-                        if (tvLastServe != null) tvLastServe.setText("Ready for serves");
-                    });
+                // When server signals readiness, update the relevant status lines.
+                if (message != null && message.endsWith(" Active")) {
+                    if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
+                        mainHandler.post(() -> {
+                            if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
+                            if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+                        });
+                    } else if (MODE_SINGLES.equals(CommunicationService.activeTennisMode)
+                            || MODE_DOUBLES.equals(CommunicationService.activeTennisMode)) {
+                        // System is live: leave spinning-up state and wait for the first serve.
+                        mainHandler.post(() -> {
+                            isSpinningUp = false;
+                            waitingForServe = true;
+                            updatePointStatus();
+                        });
+                    }
                 }
                 return;
             }
@@ -733,6 +750,7 @@ public class MainActivity extends AppCompatActivity {
         // processInPointUpdate already fired the voice call concurrently with the display update.
         String prevInPointCall = lastInPointCallFired;
         lastInPointCallFired = "";
+        lastTerminalReason = "";
         lastKnownStrokeCount = 0;
         // Do NOT clear the plot here — keep the last point's trajectory visible until the next
         // serve is detected (first POINT_UPDATE_JSON of the new point). Transition to "Waiting".
@@ -783,6 +801,14 @@ public class MainActivity extends AppCompatActivity {
                 boolean sdPlayVoice        = sdPrefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
                 boolean sdEndOfPointBeeps  = sdPrefs.getBoolean(SettingsActivity.KEY_END_OF_POINT_BEEPS, false);
 
+                // Groundstroke net crash (Net Crash + Out) and winners (Double Bounce) are
+                // silent in SINGLES/DOUBLES — voice suppressed, double-beep only if enabled.
+                // lastTerminalReason was set by processInPointUpdate which arrives just before.
+                // Serve net crashes have call_str=Fault and are NOT suppressed.
+                boolean suppressVoice = "Double Bounce".equals(lastTerminalReason)
+                        || ("Net Crash".equals(lastTerminalReason)
+                            && "Out".equalsIgnoreCase(callStr));
+
                 // Voice calls: Out/Fault/Let spoken if Voice Calls is on.
                 // Skip if processInPointUpdate already fired audio concurrently with the display
                 // update (prevInPointCall non-empty), or if tryPlayEarlyAudio fired on the network
@@ -790,7 +816,7 @@ public class MainActivity extends AppCompatActivity {
                 // button path which bypasses both early-audio paths.
                 boolean earlyFired = !prevInPointCall.isEmpty()
                         || (System.currentTimeMillis() - CommunicationService.lastEarlyAudioFiredMs) < 500;
-                if (!earlyFired && !CommunicationService.nanoAudioActive && fastSpeechEngine != null && sdPlayVoice) {
+                if (!earlyFired && !suppressVoice && !CommunicationService.nanoAudioActive && fastSpeechEngine != null && sdPlayVoice) {
                     if ("Out".equalsIgnoreCase(callStr)) {
                         fastSpeechEngine.speak("Out");
                     } else if ("Fault".equalsIgnoreCase(callStr)) {
@@ -801,9 +827,9 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 // End of Point Beeps: double-beep when no voice call was spoken.
-                // Fires when call_str is 'In' (double bounce / net crash with In call),
+                // Fires for winners (In), groundstroke net crashes (suppressed Out),
                 // or when voice is off regardless of call.
-                boolean voiceSpoken = sdPlayVoice && ("Out".equalsIgnoreCase(callStr)
+                boolean voiceSpoken = sdPlayVoice && !suppressVoice && ("Out".equalsIgnoreCase(callStr)
                         || "Fault".equalsIgnoreCase(callStr) || "Let".equalsIgnoreCase(callStr));
                 if (!CommunicationService.nanoAudioActive && sdEndOfPointBeeps && !voiceSpoken
                         && toneGenerator != null) {
@@ -1082,10 +1108,12 @@ public class MainActivity extends AppCompatActivity {
             if (tvLastServe != null) tvLastServe.setText("");
             // Clear the court plot and reset point-status state for the new session.
             if (pointVectorView != null) pointVectorView.clearPoint();
+            isSpinningUp = true;
             waitingForServe = false;
             lastPointSummaryLine = "";
             inPointServeSide = "";
             inPointStrokeCount = 0;
+            currentPointNumber = 0;
             updatePointStatus();
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -1152,6 +1180,7 @@ public class MainActivity extends AppCompatActivity {
         // (reconnect mid-point should preserve whatever is visible).
         if (!CommunicationService.isTracking) {
             if (pointVectorView != null) pointVectorView.clearPoint();
+            isSpinningUp = false;
             waitingForServe = false;
             lastPointSummaryLine = "";
             inPointServeSide = "";
@@ -1209,12 +1238,20 @@ public class MainActivity extends AppCompatActivity {
         }
         tvPointStatus1.setVisibility(View.VISIBLE);
         tvPointStatus2.setVisibility(View.VISIBLE);
-        if (waitingForServe) {
+        if (!CommunicationService.isTracking) {
+            tvPointStatus1.setText("Press Start to begin");
+            tvPointStatus2.setText("");
+        } else if (isSpinningUp) {
+            tvPointStatus1.setText("Spinning up...");
+            tvPointStatus2.setText("");
+        } else if (waitingForServe) {
             tvPointStatus1.setText("Waiting for Serve");
-            tvPointStatus2.setText(lastPointSummaryLine);
+            String s2 = currentPointNumber > 0 ? currentPointNumber + ": " + lastPointSummaryLine : lastPointSummaryLine;
+            tvPointStatus2.setText(s2);
         } else {
             tvPointStatus1.setText("Point Active");
-            tvPointStatus2.setText(buildInPointStatusText());
+            String s2 = currentPointNumber > 0 ? currentPointNumber + ": " + buildInPointStatusText() : buildInPointStatusText();
+            tvPointStatus2.setText(s2);
         }
     }
 
@@ -1227,6 +1264,7 @@ public class MainActivity extends AppCompatActivity {
      */
     private void showTrackingError(String line1, String line2) {
         CommunicationService.isTracking = false;
+        isSpinningUp = false;
         FileLogger.log(this, "Tracking error: " + line1);
         mainHandler.post(() -> {
             updateTrackingButtons(false);
@@ -1331,6 +1369,7 @@ public class MainActivity extends AppCompatActivity {
                 waitingForServe = false;
                 inPointServeSide = "";
                 inPointStrokeCount = 0;
+                currentPointNumber++;
             }
 
             // Extract serve side from the first stroke if it is a serve.
@@ -1387,6 +1426,11 @@ public class MainActivity extends AppCompatActivity {
             pointVectorView.setPointData(eventList);
             mainHandler.post(this::updatePointStatus);
 
+            // Track terminal_reason for use in processTrackEventJson (arrives shortly after).
+            // Groundstroke net crashes ("Net Crash" + call="Out") and winners ("Double Bounce")
+            // are silent in SINGLES/DOUBLES — voice suppressed, double-beep only if enabled.
+            lastTerminalReason = json.optString("terminal_reason", "");
+
             // Voice audio: fire immediately when the last stroke resolves to a terminal call,
             // concurrent with the PointVectorView update. This eliminates the structural 0.5–1.0 s
             // gap that would occur if audio were deferred to TRACK_EVENT_JSON.
@@ -1397,7 +1441,12 @@ public class MainActivity extends AppCompatActivity {
                     String lastCallStr = lastStroke.optString("call_str", "In").trim();
                     SharedPreferences vPrefs = PreferenceManager.getDefaultSharedPreferences(this);
                     boolean playVoice = vPrefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
-                    if (playVoice && !CommunicationService.nanoAudioActive) {
+                    // Suppress voice for groundstroke net crash (Net Crash + Out) and winner
+                    // (Double Bounce); serve net crash has call_str=Fault and is NOT suppressed.
+                    boolean suppressVoice = "Double Bounce".equals(lastTerminalReason)
+                            || ("Net Crash".equals(lastTerminalReason)
+                                && "Out".equalsIgnoreCase(lastCallStr));
+                    if (playVoice && !CommunicationService.nanoAudioActive && !suppressVoice) {
                         if ("Out".equalsIgnoreCase(lastCallStr)) {
                             lastInPointCallFired = lastCallStr;
                             CommunicationService.lastEarlyAudioFiredMs = System.currentTimeMillis();
