@@ -634,6 +634,17 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
+            if ("ERROR".equals(status)) {
+                if (message != null && message.startsWith("TRACKING_SPAWN_FAILED")) {
+                    showTrackingError("Tracking failed to start", "Reboot if retry fails");
+                    return;
+                } else if (message != null && message.startsWith("TRACKING_DIED")) {
+                    showTrackingError("Tracking crashed", "Tap to retry");
+                    return;
+                }
+                // Other ERROR messages fall through to updateUIStatus.
+            }
+
             if ("CALIBRATION_SAVED".equals(message)) {
                 sendCommand(buildGetCalibrationStatusCommand());
             }
@@ -1205,6 +1216,35 @@ public class MainActivity extends AppCompatActivity {
             tvPointStatus1.setText("Point Active");
             tvPointStatus2.setText(buildInPointStatusText());
         }
+    }
+
+    /**
+     * Display a tracking-failure error in all status windows that normally show match info,
+     * and mark tracking as stopped so the Start button is re-enabled.
+     * Called when the server reports TRACKING_SPAWN_FAILED or TRACKING_DIED.
+     * The error is cleared automatically the next time the user starts tracking
+     * (toggleTracking() resets both status areas before sending START_TRACKING).
+     */
+    private void showTrackingError(String line1, String line2) {
+        CommunicationService.isTracking = false;
+        FileLogger.log(this, "Tracking error: " + line1);
+        mainHandler.post(() -> {
+            updateTrackingButtons(false);
+            updateRecordingIndicator();
+            // Serve-practice status lines (tvAvgMph / tvLastServe).
+            if (tvAvgMph != null) tvAvgMph.setText(line1);
+            if (tvLastServe != null) tvLastServe.setText(line2);
+            // Singles/doubles point-status lines — force visible so the error
+            // appears regardless of which mode was active when the failure occurred.
+            if (tvPointStatus1 != null) {
+                tvPointStatus1.setVisibility(View.VISIBLE);
+                tvPointStatus1.setText(line1);
+            }
+            if (tvPointStatus2 != null) {
+                tvPointStatus2.setVisibility(View.VISIBLE);
+                tvPointStatus2.setText(line2);
+            }
+        });
     }
 
     /** Build "Ad serve + 2 hits..." or "3 hits..." for the active-point status line. */
