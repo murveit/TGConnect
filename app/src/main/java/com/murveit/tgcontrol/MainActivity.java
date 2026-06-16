@@ -101,7 +101,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String CMD_STOP_RECORDING = "STOP_RECORDING\n";
     private static final String CMD_STOP_TRACKING = "STOP_TRACKING\n";
     
-    private static final String KEY_RECORD_SESSION = "record_session";
+    private static final String KEY_RECORD_SESSION  = "record_session";
+    private static final String KEY_SHOW_UNDISTORTED = "show_undistorted";
 
     // --- Algorithmic Constants for Protocol Parsing ---
     private static final String SENSOR_ID_LEFT_STR = "0";
@@ -157,6 +158,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private TextView tvPoseLeft, tvPoseRight;
     private CheckBox cbRecordSession;
+    private CheckBox cbUndistorted;
     
     // UI Elements for Serve Plotting (SERVE_PRACTICE) and Rally Vectors (SINGLES/DOUBLES)
     private LinearLayout llServePlotContainer;
@@ -197,8 +199,18 @@ public class MainActivity extends AppCompatActivity {
     // suppress voice for groundstroke net crashes ("Net Crash") and winners ("Double Bounce").
     private String lastTerminalReason = "";
     // True from the moment Start is pressed until the server signals it is active
-    // (TRACK_EVENT: * Active).  Used to show "Spinning up..." in the point status area.
+    // (TRACK_EVENT: * Active).  Used to show "Spinning up. Ns" in the point status area.
     private boolean isSpinningUp = false;
+    private long spinUpStartMs = 0;
+    // Ticks once per second while spinning up to update the elapsed-time display.
+    private final Runnable spinUpTickRunnable = new Runnable() {
+        @Override public void run() {
+            if (isSpinningUp) {
+                updatePointStatus();
+                mainHandler.postDelayed(this, 1000);
+            }
+        }
+    };
     private boolean sessionRecording = false;
 
     // Recording indicator icon (right side of title bar)
@@ -306,6 +318,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatusLine2 = findViewById(R.id.tvStatus2);
         btnStartRecording = findViewById(R.id.btnStartRecording);
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
+        cbUndistorted = findViewById(R.id.cbUndistorted);
         ivImage1 = findViewById(R.id.ivImage1);
         ivImage2 = findViewById(R.id.ivImage2);
         histView1 = findViewById(R.id.histView1);
@@ -349,6 +362,12 @@ public class MainActivity extends AppCompatActivity {
             cbRecordSession.setChecked(prefs.getBoolean(KEY_RECORD_SESSION, false));
             cbRecordSession.setOnCheckedChangeListener((btn, isChecked) -> {
                 prefs.edit().putBoolean(KEY_RECORD_SESSION, isChecked).apply();
+            });
+        }
+        if (cbUndistorted != null) {
+            cbUndistorted.setChecked(prefs.getBoolean(KEY_SHOW_UNDISTORTED, false));
+            cbUndistorted.setOnCheckedChangeListener((btn, isChecked) -> {
+                prefs.edit().putBoolean(KEY_SHOW_UNDISTORTED, isChecked).apply();
             });
         }
         
@@ -600,14 +619,18 @@ public class MainActivity extends AppCompatActivity {
                 if (message != null && message.endsWith(" Active")) {
                     if (MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
                         mainHandler.post(() -> {
+                            isSpinningUp = false;
+                            stopSpinUpTimer();
                             if (tvAvgMph != null) tvAvgMph.setText("0 serves, 0 In, -- MPH avg");
                             if (tvLastServe != null) tvLastServe.setText("Ready for serves");
+                            updatePointStatus();
                         });
                     } else if (MODE_SINGLES.equals(CommunicationService.activeTennisMode)
                             || MODE_DOUBLES.equals(CommunicationService.activeTennisMode)) {
                         // System is live: leave spinning-up state and wait for the first serve.
                         mainHandler.post(() -> {
                             isSpinningUp = false;
+                            stopSpinUpTimer();
                             waitingForServe = true;
                             updatePointStatus();
                         });
@@ -805,9 +828,12 @@ public class MainActivity extends AppCompatActivity {
                 // silent in SINGLES/DOUBLES — voice suppressed, double-beep only if enabled.
                 // lastTerminalReason was set by processInPointUpdate which arrives just before.
                 // Serve net crashes have call_str=Fault and are NOT suppressed.
+                // null terminal_reason + In call means winner with no confirmed terminal event
+                // (Double Bounce found only by finalize(), or unreturned ball) — also silent.
                 boolean suppressVoice = "Double Bounce".equals(lastTerminalReason)
                         || ("Net Crash".equals(lastTerminalReason)
-                            && "Out".equalsIgnoreCase(callStr));
+                            && "Out".equalsIgnoreCase(callStr))
+                        || (lastTerminalReason.isEmpty() && "In".equalsIgnoreCase(callStr));
 
                 // Voice calls: Out/Fault/Let spoken if Voice Calls is on.
                 // Skip if processInPointUpdate already fired audio concurrently with the display
@@ -1109,6 +1135,7 @@ public class MainActivity extends AppCompatActivity {
             // Clear the court plot and reset point-status state for the new session.
             if (pointVectorView != null) pointVectorView.clearPoint();
             isSpinningUp = true;
+            startSpinUpTimer();
             waitingForServe = false;
             lastPointSummaryLine = "";
             inPointServeSide = "";
@@ -1181,6 +1208,7 @@ public class MainActivity extends AppCompatActivity {
         if (!CommunicationService.isTracking) {
             if (pointVectorView != null) pointVectorView.clearPoint();
             isSpinningUp = false;
+            stopSpinUpTimer();
             waitingForServe = false;
             lastPointSummaryLine = "";
             inPointServeSide = "";
@@ -1227,10 +1255,26 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /** Show or hide the two point-status lines and set their text based on current state. */
+    private void startSpinUpTimer() {
+        spinUpStartMs = System.currentTimeMillis();
+        mainHandler.removeCallbacks(spinUpTickRunnable);
+        mainHandler.postDelayed(spinUpTickRunnable, 1000);
+    }
+
+    private void stopSpinUpTimer() {
+        mainHandler.removeCallbacks(spinUpTickRunnable);
+    }
+
     private void updatePointStatus() {
         if (tvPointStatus1 == null || tvPointStatus2 == null) return;
         boolean isSinglesDoubles = MODE_SINGLES.equals(CommunicationService.activeTennisMode)
                 || MODE_DOUBLES.equals(CommunicationService.activeTennisMode);
+        // Serve practice uses tvAvgMph for its spinning-up display rather than tvPointStatus1.
+        if (isSpinningUp && tvAvgMph != null
+                && MODE_SERVE_PRACTICE.equals(CommunicationService.activeTennisMode)) {
+            int elapsedSecs = (int) ((System.currentTimeMillis() - spinUpStartMs) / 1000);
+            tvAvgMph.setText(elapsedSecs == 0 ? "Spinning up..." : "Spinning up. " + elapsedSecs + "s");
+        }
         if (!isSinglesDoubles) {
             tvPointStatus1.setVisibility(View.GONE);
             tvPointStatus2.setVisibility(View.GONE);
@@ -1242,7 +1286,9 @@ public class MainActivity extends AppCompatActivity {
             tvPointStatus1.setText("Press Start to begin");
             tvPointStatus2.setText("");
         } else if (isSpinningUp) {
-            tvPointStatus1.setText("Spinning up...");
+            int elapsedSecs = (int) ((System.currentTimeMillis() - spinUpStartMs) / 1000);
+            String spinText = elapsedSecs == 0 ? "Spinning up..." : "Spinning up. " + elapsedSecs + "s";
+            tvPointStatus1.setText(spinText);
             tvPointStatus2.setText("");
         } else if (waitingForServe) {
             tvPointStatus1.setText("Waiting for Serve");
@@ -1265,6 +1311,7 @@ public class MainActivity extends AppCompatActivity {
     private void showTrackingError(String line1, String line2) {
         CommunicationService.isTracking = false;
         isSpinningUp = false;
+        stopSpinUpTimer();
         FileLogger.log(this, "Tracking error: " + line1);
         mainHandler.post(() -> {
             updateTrackingButtons(false);
@@ -1443,9 +1490,11 @@ public class MainActivity extends AppCompatActivity {
                     boolean playVoice = vPrefs.getBoolean(SettingsActivity.KEY_VOICE_CALLS, false);
                     // Suppress voice for groundstroke net crash (Net Crash + Out) and winner
                     // (Double Bounce); serve net crash has call_str=Fault and is NOT suppressed.
+                    // null terminal_reason + In means winner with no confirmed terminal event — also silent.
                     boolean suppressVoice = "Double Bounce".equals(lastTerminalReason)
                             || ("Net Crash".equals(lastTerminalReason)
-                                && "Out".equalsIgnoreCase(lastCallStr));
+                                && "Out".equalsIgnoreCase(lastCallStr))
+                            || (lastTerminalReason.isEmpty() && "In".equalsIgnoreCase(lastCallStr));
                     if (playVoice && !CommunicationService.nanoAudioActive && !suppressVoice) {
                         if ("Out".equalsIgnoreCase(lastCallStr)) {
                             lastInPointCallFired = lastCallStr;
@@ -1575,7 +1624,13 @@ public class MainActivity extends AppCompatActivity {
         return "GET_CALIBRATION_STATUS:DEBUG=" + (useDebug ? "1" : "0") + "\n";
     }
 
-    private String buildCaptureCommand() { return "CAPTURE_PHOTO:" + getSettingsPayload(false).replace("4K,JPEG,", "4K,JPEG,0.25,"); }
+    private String buildCaptureCommand() {
+        String base = getSettingsPayload(false)
+                .replace("4K,JPEG,", "4K,JPEG,0.25,")
+                .replace("\n", "");
+        int undistort = (cbUndistorted != null && cbUndistorted.isChecked()) ? 1 : 0;
+        return "CAPTURE_PHOTO:" + base + ",undistort=" + undistort + "\n";
+    }
     private String buildStartRecordingCommand() { return "START_RECORDING:" + getSettingsPayload(false); }
     private String buildStartTrackingCommand(String m) {
         String recordFlag = cbRecordSession != null && cbRecordSession.isChecked() ? "RECORD=1" : "RECORD=0";

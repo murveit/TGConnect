@@ -330,6 +330,11 @@ public class CalibrationActivity extends AppCompatActivity {
     }
 
     private void startCalibrationFlow() {
+        // Synchronously clear the sticky LiveData value before the observer goes active
+        // (onStart). postValue(null) inside sendCommand() runs too late because startService()
+        // is asynchronous — the observer would otherwise receive the stale image from the
+        // previous calibration session.
+        CommunicationService.clearImageData();
         extractedCoords.clear();
         previousStrapClicks.clear();
         lastCalibUsedStrap = false;

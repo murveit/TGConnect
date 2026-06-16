@@ -179,6 +179,22 @@ public class CommunicationService extends Service {
     }
 
     /**
+     * Synchronously clears the imageData LiveData on the main thread.
+     *
+     * Must be called from the main thread. Unlike postValue(null), setValue(null) takes
+     * effect immediately, so any observer that becomes active later (e.g. in onStart())
+     * receives null — not the stale bitmap from the previous calibration session.
+     *
+     * This fixes the sticky-LiveData race: startService() is asynchronous, so the
+     * postValue(null) inside sendCommand() runs after onStart() has already delivered
+     * the stale cached image to the newly-active observer.
+     */
+    @androidx.annotation.MainThread
+    public static void clearImageData() {
+        imageData.setValue(null);
+    }
+
+    /**
      * Returns true if the device's active network has a link-local address on the same /24
      * subnet as {@code serverAddress} (e.g. "10.42.0.1" → prefix "10.42.0."). Used by
      * MainActivity to gate the Connect button before a connection attempt is made.
