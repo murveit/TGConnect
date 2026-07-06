@@ -689,6 +689,15 @@ public class MainActivity extends AppCompatActivity {
                 sendCommand(buildGetCalibrationStatusCommand());
             }
 
+            if ("TOUR_POINTS".equals(status) || "ADJUST_COMPLETE".equals(status)) {
+                // CalibrationActivity-internal implementation detail (raw line/wireframe
+                // geometry payload, or a bare adjustment ack) -- statusData is shared
+                // across activities, so without this it falls through to the generic
+                // status line below and floods it with a huge unreadable dump the
+                // moment you leave the calibration screen.
+                return;
+            }
+
             updateUIStatus(status, message);
 
             if ("Connected".equals(status)) {

@@ -195,6 +195,23 @@ public class CommunicationService extends Service {
     }
 
     /**
+     * Synchronously clears the statusData LiveData on the main thread, for the exact
+     * same sticky-LiveData race as clearImageData() above -- but for status/text
+     * messages (e.g. "TOUR_POINTS", the calibration line/wireframe geometry payload)
+     * instead of images. Without this, re-entering CalibrationActivity for a new
+     * calibration attempt re-delivers the PREVIOUS session's last TOUR_POINTS payload
+     * to the new activity instance's observer as soon as it starts, repopulating
+     * CalibrationOverlayView with stale wireframe/blue-line geometry from the old
+     * (already-completed) calibration, overlaid on the new session's fresh image --
+     * reported directly: "it shows the uncorrected image and overlays the blue and
+     * green lines (from the previous calibration's corrected image)".
+     */
+    @androidx.annotation.MainThread
+    public static void clearStatusData() {
+        statusData.setValue(null);
+    }
+
+    /**
      * Returns true if the device's active network has a link-local address on the same /24
      * subnet as {@code serverAddress} (e.g. "10.42.0.1" → prefix "10.42.0."). Used by
      * MainActivity to gate the Connect button before a connection attempt is made.
@@ -523,6 +540,10 @@ public class CommunicationService extends Service {
                                     socket.setSoTimeout(500);
                                 }
                             } else if ("STATUS: PROCESS_COMPLETE; SENDING_VALIDATION_IMAGE".equals(serverMessage)) {
+                                // The only command that still sends an image -- the underlying
+                                // photo is captured once here and never re-sent; every later
+                                // calibration update (line adjustments, view-mode toggling) is
+                                // just geometry data (see TOUR_POINTS below), drawn client-side.
                                 statusData.postValue(new Pair<>("Status", "Receiving validation image..."));
                                 try {
                                     socket.setSoTimeout(5000);
@@ -532,7 +553,26 @@ public class CommunicationService extends Service {
                                 } finally {
                                     socket.setSoTimeout(500);
                                 }
-                                
+
+                            } else if ("STATUS: ADJUST_COMPLETE".equals(serverMessage)) {
+                                // No image follows -- see CalibrationActivity's handling of the
+                                // "ADJUST_COMPLETE" status tag, which re-fetches GET_TOUR_POINTS
+                                // for the (possibly shifted) line geometry.
+                                statusData.postValue(new Pair<>("ADJUST_COMPLETE", ""));
+
+                            } else if (serverMessage.startsWith("STATUS: TOUR_POINTS;")) {
+                                // Text response (no binary image) listing the current calibration's
+                                // line endpoint/midpoint positions -- see CalibrationActivity's
+                                // handling of the "TOUR_POINTS" status tag.
+                                String payload = serverMessage.substring("STATUS: TOUR_POINTS;".length()).trim();
+                                statusData.postValue(new Pair<>("TOUR_POINTS", payload));
+
+                            } else if (serverMessage.startsWith("STATUS:") && serverMessage.contains("ABORTED")) {
+                                // ADJUST_ABORTED / TOUR_ABORTED / COMPOSITE_ABORTED / PROCESS_ABORTED,
+                                // etc. -- surfaced generically so CalibrationActivity can reset its
+                                // "recomputing..." state instead of waiting forever.
+                                statusData.postValue(new Pair<>("CALIBRATION_ABORTED", serverMessage));
+
                             } else if (serverMessage.startsWith("STATUS_FRAMES:")) {
                                 String data = serverMessage.substring("STATUS_FRAMES:".length()).trim();
                                 String[] parts = data.split(",");

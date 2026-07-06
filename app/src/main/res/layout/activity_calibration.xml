@@ -23,7 +23,17 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="matrix" />
-            
+
+        <!-- Adjust-Lines / Tour overlay: handle markers and the live-drag line
+             preview, transformed by the same Matrix as ivCalibrationImage so they
+             track the image exactly during pan/zoom. Drawn client-side so this
+             tracks touch input instantly with no server round-trip; see
+             CalibrationOverlayView. -->
+        <com.murveit.tgcontrol.CalibrationOverlayView
+            android:id="@+id/calibrationOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
         <!-- Fixed Mathematical Crosshair -->
         <View
             android:layout_width="2dp"
@@ -37,103 +47,301 @@
             android:layout_gravity="center" />
     </FrameLayout>
 
-    <!-- Dedicated Control Bar Panel -->
+    <!-- Dedicated Control Bar Panel. Widened from the original 160dp: several rows
+         now hold two buttons side by side (e.g. Retake+Add Strap, Prev+Accept+Next)
+         rather than every control stacking one-per-row, which was overflowing the
+         available height on real devices and pushing the last row(s) off-screen.
+         240dp (first attempt) left visible room for a 3rd button per row; 180dp is
+         a tighter fit for exactly 2. -->
     <LinearLayout
         android:id="@+id/controlBar"
-        android:layout_width="160dp"
+        android:layout_width="180dp"
         android:layout_height="match_parent"
         android:background="#1E1E1E"
         android:orientation="vertical"
         android:padding="8dp"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <ImageButton
-            android:id="@+id/btnCancel"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="end"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            app:tint="#FFFFFF"
-            android:contentDescription="Cancel Calibration" />
-        
-        <TextView
-            android:id="@+id/tvInstruction"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:text="Loading..."
-            android:gravity="center"
-            android:layout_marginTop="8dp" />
-            
-        <Space
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-            
+        <!-- Instruction text + Cancel/Back (X), one row. X is state-aware (see
+             CalibrationActivity's btnCancel listener): in STATE_ADJUST it steps back
+             to STATE_REVIEW (was a separate Done button; removed since X covers it;
+             "go back one level" every time, only exiting the whole activity once
+             already at Review), everywhere else it exits the activity. -->
         <LinearLayout
-            android:id="@+id/llRetake"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone">
-
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/btnRetake"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:src="@android:drawable/ic_menu_camera"
-                app:backgroundTint="#424242"
-                app:tint="#FFFFFF"
-                app:fabSize="normal"
-                app:elevation="2dp"
-                android:contentDescription="Retake Photo" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/tvRetakeLabel"
+                android:id="@+id/tvInstruction"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:text="Loading..."
+                android:gravity="center" />
+
+            <ImageButton
+                android:id="@+id/btnCancel"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                app:tint="#FFFFFF"
+                android:contentDescription="Cancel Calibration" />
+        </LinearLayout>
+
+        <!-- View-mode toggle (cycles Homography-only/Canny-only/Both, mirroring the
+             Mac UI's e/E behavior) and the single Adjust entry point, combined into
+             one compact row; Tour and Adjust Lines are now the same mode (see
+             CalibrationActivity's STATE_ADJUST: Prev/Next browse every handle,
+             Accept edits whichever one is currently shown), so there's only one
+             button here instead of two. Visible in STATE_REVIEW and STATE_ADJUST. -->
+        <LinearLayout
+            android:id="@+id/llViewMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginTop="6dp">
+
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Retake"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:layout_marginTop="4dp" />
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_marginEnd="12dp">
+
+                <ImageButton
+                    android:id="@+id/btnViewMode"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_menu_view"
+                    app:tint="#FFFFFF"
+                    android:contentDescription="Toggle View Mode" />
+
+                <TextView
+                    android:id="@+id/tvViewModeLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Both"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llAdjustEntry"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <com.google.android.material.floatingactionbutton.FloatingActionButton
+                    android:id="@+id/btnAdjustLines"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@android:drawable/ic_menu_edit"
+                    app:backgroundTint="#455A64"
+                    app:tint="#FFFFFF"
+                    app:fabSize="mini"
+                    app:elevation="2dp"
+                    android:contentDescription="Adjust Lines" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Adjust"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Current tour/adjust point label, e.g. "3/18 baseline:e1". -->
+        <TextView
+            android:id="@+id/tvAdjustPointLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFEB3B"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+        <!-- Prev / Accept / Next in one row; Tour and Adjust Lines are the same
+             mode now: Prev/Next browse every handle, Accept edits whichever one is
+             currently shown (not automatic on pan-stop; a full recompute pass
+             measured ~0.5s+ on a MacBook Pro, likely more on the Orin Nano). Each
+             gets a text label; every other button in this panel has one, and an
+             unlabeled green FAB between two unlabeled nav arrows was reported as
+             not obviously an "Accept" control. -->
+        <LinearLayout
+            android:id="@+id/llAdjustNav"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginTop="8dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <ImageButton
+                    android:id="@+id/btnAdjustPrev"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_media_previous"
+                    app:tint="#FFFFFF"
+                    android:contentDescription="Previous Point" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Prev"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp">
+
+                <!-- Two-stage button: "Edit" (pencil, arms editing; pan now repositions
+                     this point and a live preview line appears) then "Accept" (checkmark,
+                     commits the current crosshair position). Starts as "Edit" every time
+                     you land on a new point, so freely panning/zooming/Prev/Next to just
+                     inspect never touches anything unless you explicitly arm it. -->
+                <com.google.android.material.floatingactionbutton.FloatingActionButton
+                    android:id="@+id/btnAdjustAccept"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@android:drawable/ic_menu_edit"
+                    app:backgroundTint="#455A64"
+                    app:tint="#FFFFFF"
+                    app:fabSize="mini"
+                    app:elevation="2dp"
+                    android:contentDescription="Edit or Accept" />
+
+                <TextView
+                    android:id="@+id/tvAdjustAcceptLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Edit"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <ImageButton
+                    android:id="@+id/btnAdjustNext"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_media_next"
+                    app:tint="#FFFFFF"
+                    android:contentDescription="Next Point" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Next"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <Space
             android:layout_width="match_parent"
-            android:layout_height="12dp" />
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
-        <!-- Contextual third button: "Add Strap" (no strap used) or "Remove Strap" (strap used) -->
+        <!-- Retake and the contextual third button ("+Strap"/"-Strap") side by side;
+             both secondary actions, paired to save a whole row versus stacking them. -->
         <LinearLayout
-            android:id="@+id/llThird"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone">
+            android:orientation="horizontal">
 
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/btnThird"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:id="@+id/llRetake"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:src="@android:drawable/ic_menu_add"
-                app:backgroundTint="#1565C0"
-                app:tint="#FFFFFF"
-                app:fabSize="mini"
-                app:elevation="2dp"
-                android:contentDescription="Strap Action" />
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
 
-            <TextView
-                android:id="@+id/tvThirdLabel"
-                android:layout_width="wrap_content"
+                <com.google.android.material.floatingactionbutton.FloatingActionButton
+                    android:id="@+id/btnRetake"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@android:drawable/ic_menu_camera"
+                    app:backgroundTint="#424242"
+                    app:tint="#FFFFFF"
+                    app:fabSize="mini"
+                    app:elevation="2dp"
+                    android:contentDescription="Retake Photo" />
+
+                <TextView
+                    android:id="@+id/tvRetakeLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Retake"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
+
+            <!-- Contextual third button: "+Strap" (no strap used) or "-Strap" (strap used) -->
+            <LinearLayout
+                android:id="@+id/llThird"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Add Strap"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:layout_marginTop="4dp" />
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <com.google.android.material.floatingactionbutton.FloatingActionButton
+                    android:id="@+id/btnThird"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@android:drawable/ic_menu_add"
+                    app:backgroundTint="#1565C0"
+                    app:tint="#FFFFFF"
+                    app:fabSize="mini"
+                    app:elevation="2dp"
+                    android:contentDescription="Strap Action" />
+
+                <TextView
+                    android:id="@+id/tvThirdLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+Strap"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
         </LinearLayout>
 
         <Space
