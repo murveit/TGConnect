@@ -158,6 +158,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private TextView tvPoseLeft, tvPoseRight;
     private TextView tvCalibDebugWarning;
+    private TextView tvCalibDebugWarningLabel;
     private CheckBox cbRecordSession;
     private CheckBox cbUndistorted;
     
@@ -335,6 +336,7 @@ public class MainActivity extends AppCompatActivity {
         tvPoseLeft = findViewById(R.id.tvPoseLeft);
         tvPoseRight = findViewById(R.id.tvPoseRight);
         tvCalibDebugWarning = findViewById(R.id.tvCalibDebugWarning);
+        tvCalibDebugWarningLabel = findViewById(R.id.tvCalibDebugWarningLabel);
         tvTennisModeTitle = findViewById(R.id.tvTennisModeTitle);
         btnStartTracking = findViewById(R.id.btnStartTracking);
         tvTrackingLog = findViewById(R.id.tvTrackingLog);
@@ -1697,21 +1699,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Shows a large red "!" in the blank space above the calibration buttons on the
-     * Select Play Mode screen whenever KEY_DEBUG_CALIBRATION or KEY_USE_CANNED_CALIBRATION
-     * is on, as a reminder that a real match would use the wrong calibration -- added
-     * 2026-07-20 after a live court session was run with one of these left checked
-     * unintentionally. Safe to call any time, including when llTennisMenu isn't visible
-     * (the TextView just stays hidden inside a hidden parent) -- called from switchState()
-     * on navigating to STATE_TENNIS_MENU, and from onResume() to catch the setting being
-     * changed in SettingsActivity and coming back via the back button.
+     * Shows a large red "!" plus a "Calibration Debugging Enabled" label in the blank
+     * space above the calibration buttons on the Select Play Mode screen whenever
+     * KEY_DEBUG_CALIBRATION or KEY_USE_CANNED_CALIBRATION is on, as a reminder that a
+     * real match would use the wrong calibration -- added 2026-07-20 after a live court
+     * session was run with one of these left checked unintentionally. Safe to call any
+     * time, including when llTennisMenu isn't visible (the TextViews just stay hidden
+     * inside a hidden parent) -- called from switchState() on navigating to
+     * STATE_TENNIS_MENU, and from onResume() to catch the setting being changed in
+     * SettingsActivity and coming back via the back button.
      */
     private void updateCalibDebugWarning() {
         if (tvCalibDebugWarning == null) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean debugCalib = prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false);
         boolean cannedCalib = prefs.getBoolean(SettingsActivity.KEY_USE_CANNED_CALIBRATION, false);
-        tvCalibDebugWarning.setVisibility((debugCalib || cannedCalib) ? View.VISIBLE : View.GONE);
+        int visibility = (debugCalib || cannedCalib) ? View.VISIBLE : View.GONE;
+        tvCalibDebugWarning.setVisibility(visibility);
+        if (tvCalibDebugWarningLabel != null) tvCalibDebugWarningLabel.setVisibility(visibility);
     }
 
     @Override

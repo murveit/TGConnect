@@ -17,7 +17,20 @@ package com.murveit.tgcontrol;
  *
  * 3. INTERNAL ALGORITHMIC LOGIC (Step-by-step):
  * - Generates a massive target array containing standard calls ("Out", "Fault", "Let") and
- * a loop of MPH integers (e.g., "20 miles per hour" to "140 miles per hour").
+ * a loop of MPH integers (e.g., "20 miles per hour" to "140 miles per hour") -- 246 phrases
+ * total at the current MPH_MIN/MPH_MAX range.
+ * - initializeCache() dispatches the check-and-load pass below to a dedicated background
+ * thread and returns immediately, rather than running it inline on the caller's thread.
+ * This was added 2026-07-20 after a real ANR ("Input dispatching timed out ... waited
+ * 5003ms") whose trace showed the main thread blocked inside SoundPool.load(), called
+ * from here via TextToSpeech.onInit()'s callback (which Android always dispatches on the
+ * main thread) -- on a warm cache (all 246 .wav files already on disk from a prior
+ * launch), that's up to 246 back-to-back native load() calls with no yielding, occasionally
+ * slow enough on real hardware to trip Android's 5s input-dispatch watchdog. SoundPool.load()
+ * is documented safe to call from any thread (the actual decode already happens on
+ * SoundPool's own native thread pool), so there was no correctness reason for this to run
+ * on the main thread in the first place -- see the background-thread-safety note on
+ * soundMap below.
  * - Interrogates the Android internal storage directory specific to this cache.
  * - For each target phrase, sanitizes the string into a valid filesystem name.
  * - If the physical .wav file exists: Issues an immediate load command to the SoundPool.
@@ -25,9 +38,12 @@ package com.murveit.tgcontrol;
  * command to the TTS engine.
  * - Utilizes an UtteranceProgressListener to intercept synthesis completion callbacks. Once a
  * file is successfully written to disk, it is dynamically loaded into the SoundPool.
- * - Maintains a HashMap linking the exact textual phrase to the generated SoundPool ID.
- * - Upon a `speak(text)` invocation, evaluates the HashMap. If a Sound ID exists, it triggers
- * immediate native playback via SoundPool. If it misses, it falls back to dynamic TTS synthesis.
+ * - Maintains a map linking the exact textual phrase to the generated SoundPool ID.
+ * - Upon a `speak(text)` invocation, evaluates the map. If a Sound ID exists, it triggers
+ * immediate native playback via SoundPool. If it misses, it falls back to dynamic TTS
+ * synthesis -- this existing fallback is also what makes the background-thread cache
+ * population above safe: speak() calls made before the background pass finishes just take
+ * the slower dynamic-TTS path instead of a cache hit, the same as any other cache miss.
  *
  * 4. EXPECTED OUTPUTS / SIDE EFFECTS:
  * - Side Effect: Creates a directory in internal storage containing dozens of .wav files.
@@ -48,9 +64,9 @@ import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FastSpeechEngine {
     private static final String TAG = "FastSpeechEngine";
@@ -72,11 +88,19 @@ public class FastSpeechEngine {
     private final SoundPool soundPool;
     private final File cacheDir;
 
-    // Maps the exact phrase (e.g. "73 miles per hour") to the SoundPool ID
-    private final Map<String, Integer> soundMap = new HashMap<>();
+    // Maps the exact phrase (e.g. "73 miles per hour") to the SoundPool ID. A
+    // ConcurrentHashMap, not a plain HashMap: loadIntoSoundPool() writes to this from
+    // initializeCache()'s background thread (see that method) and, separately, from
+    // the TTS UtteranceProgressListener's onDone() callback (already off the main
+    // thread even before this change -- Android does not guarantee that callback
+    // runs on any particular thread), while speak() reads it from whatever thread
+    // the caller uses (normally the main thread). Plain HashMap is not safe under
+    // concurrent access from multiple threads; this was a latent risk even before
+    // initializeCache() itself moved to a background thread.
+    private final Map<String, Integer> soundMap = new ConcurrentHashMap<>();
     private final List<String> targetPhrases = new ArrayList<>();
 
-    private long initialNativeMemory = 0;
+    private volatile long initialNativeMemory = 0;
 
     public FastSpeechEngine(Context context, TextToSpeech initializedTts) {
         this.context = context.getApplicationContext();
@@ -119,6 +143,14 @@ public class FastSpeechEngine {
     }
 
     public void initializeCache() {
+        // Runs the actual check-and-load pass on a dedicated background thread and
+        // returns immediately -- see this class's header comment (2026-07-20 ANR note)
+        // for why this can't run inline on the caller's thread (always the main thread
+        // in practice, via TextToSpeech.onInit()'s callback).
+        new Thread(this::runInitializeCache, "FastSpeechEngine-Init").start();
+    }
+
+    private void runInitializeCache() {
         // Capture baseline memory before decoding buffers into the C++ layer
         initialNativeMemory = Debug.getNativeHeapAllocatedSize();
         Log.d(TAG, "Initializing cache. Checking " + targetPhrases.size() + " phrases.");
