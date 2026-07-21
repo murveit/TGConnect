@@ -84,8 +84,6 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_END_OF_POINT_BEEPS = "end_of_point_beeps";
     // SINGLES/DOUBLES: plays a single beep each time a new mid-rally bounce is confirmed.
     public static final String KEY_IN_CALLS = "in_calls";
-    // Represents the user preference to enable verbose algorithmic tracking logs on the server
-    public static final String KEY_ENABLE_LOGGING = "enable_logging";
     // Bypass the 12-hour TTL for offline or home testing
     public static final String KEY_DEBUG_CALIBRATION = "debug_calibration";
     // Use pre-captured canned images instead of live capture during calibration
@@ -106,7 +104,6 @@ public class SettingsActivity extends AppCompatActivity {
     private CheckBox cbEndOfPointBeeps;
     private CheckBox cbInCalls;
     private android.widget.RadioGroup rgInServe;
-    private CheckBox cbEnableLogging;
     private boolean isFakeCallsActive = false;
     private CheckBox cbDebugCalibration;
     private CheckBox cbUseCannedCalibration;
@@ -140,7 +137,6 @@ public class SettingsActivity extends AppCompatActivity {
         cbEndOfPointBeeps = findViewById(R.id.cbEndOfPointBeeps);
         cbInCalls = findViewById(R.id.cbInCalls);
         rgInServe = findViewById(R.id.rgInServe);
-        cbEnableLogging = findViewById(R.id.cbEnableLogging);
         cbDebugCalibration = findViewById(R.id.cbDebugCalibration);
         cbUseCannedCalibration = findViewById(R.id.cbUseCannedCalibration);
         cbDebugAudio = findViewById(R.id.cbDebugAudio);
@@ -289,7 +285,6 @@ public class SettingsActivity extends AppCompatActivity {
             else if ("beep".equals(inServeAudio)) rgInServe.check(R.id.rbInServeBeep);
             else                                   rgInServe.check(R.id.rbInServeMute);
         }
-        if (cbEnableLogging != null) cbEnableLogging.setChecked(prefs.getBoolean(KEY_ENABLE_LOGGING, false));
         if (cbDebugCalibration != null) cbDebugCalibration.setChecked(prefs.getBoolean(KEY_DEBUG_CALIBRATION, false));
         if (cbUseCannedCalibration != null) cbUseCannedCalibration.setChecked(prefs.getBoolean(KEY_USE_CANNED_CALIBRATION, false));
         if (cbDebugAudio != null) cbDebugAudio.setChecked(prefs.getBoolean(KEY_DEBUG_AUDIO, false));
@@ -329,7 +324,6 @@ public class SettingsActivity extends AppCompatActivity {
             else if (checked == R.id.rbInServeBeep) inServeAudio = "beep";
             editor.putString(KEY_IN_SERVE_AUDIO, inServeAudio);
         }
-        if (cbEnableLogging != null) editor.putBoolean(KEY_ENABLE_LOGGING, cbEnableLogging.isChecked());
         if (cbDebugCalibration != null) editor.putBoolean(KEY_DEBUG_CALIBRATION, cbDebugCalibration.isChecked());
         if (cbUseCannedCalibration != null) editor.putBoolean(KEY_USE_CANNED_CALIBRATION, cbUseCannedCalibration.isChecked());
         if (cbDebugAudio != null) editor.putBoolean(KEY_DEBUG_AUDIO, cbDebugAudio.isChecked());

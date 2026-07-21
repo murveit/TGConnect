@@ -157,6 +157,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTennisModeTitle, tvTrackingLog, tvSelectPlayMode, tvLiveTelemetry;
     private Button btnModeSingles, btnModeDoubles, btnModeServe, btnModeRally, btnCalibrateLeft, btnCalibrateRight;
     private TextView tvPoseLeft, tvPoseRight;
+    private TextView tvCalibDebugWarning;
     private CheckBox cbRecordSession;
     private CheckBox cbUndistorted;
     
@@ -333,6 +334,7 @@ public class MainActivity extends AppCompatActivity {
         btnCalibrateRight = findViewById(R.id.btnCalibrateRight);
         tvPoseLeft = findViewById(R.id.tvPoseLeft);
         tvPoseRight = findViewById(R.id.tvPoseRight);
+        tvCalibDebugWarning = findViewById(R.id.tvCalibDebugWarning);
         tvTennisModeTitle = findViewById(R.id.tvTennisModeTitle);
         btnStartTracking = findViewById(R.id.btnStartTracking);
         tvTrackingLog = findViewById(R.id.tvTrackingLog);
@@ -584,7 +586,10 @@ public class MainActivity extends AppCompatActivity {
                 btnPowerOff.setEnabled(true);
                 if (tvNetworkStatus != null) tvNetworkStatus.setVisibility(View.GONE);
             } else if (newState == STATE_RAW_RECORDING) llRawRecording.setVisibility(View.VISIBLE);
-            else if (newState == STATE_TENNIS_MENU) llTennisMenu.setVisibility(View.VISIBLE);
+            else if (newState == STATE_TENNIS_MENU) {
+                llTennisMenu.setVisibility(View.VISIBLE);
+                updateCalibDebugWarning();
+            }
             else if (newState == STATE_ACTIVE_TENNIS) llActiveTennis.setVisibility(View.VISIBLE);
         });
     }
@@ -1617,7 +1622,7 @@ public class MainActivity extends AppCompatActivity {
           .append(",exposureHigh=").append(prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L))
           .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
-          .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
+          .append(",logging=1") // detailed tracking logs are always on -- no longer user-toggleable
           .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
           .append(",debug_calib=").append(prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false) ? 1 : 0)
           .append(",serve_thresh=").append(prefs.getInt(SettingsActivity.KEY_SERVE_THRESH, DEFAULT_SERVE_THRESH))
@@ -1691,11 +1696,31 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Shows a large red "!" in the blank space above the calibration buttons on the
+     * Select Play Mode screen whenever KEY_DEBUG_CALIBRATION or KEY_USE_CANNED_CALIBRATION
+     * is on, as a reminder that a real match would use the wrong calibration -- added
+     * 2026-07-20 after a live court session was run with one of these left checked
+     * unintentionally. Safe to call any time, including when llTennisMenu isn't visible
+     * (the TextView just stays hidden inside a hidden parent) -- called from switchState()
+     * on navigating to STATE_TENNIS_MENU, and from onResume() to catch the setting being
+     * changed in SettingsActivity and coming back via the back button.
+     */
+    private void updateCalibDebugWarning() {
+        if (tvCalibDebugWarning == null) return;
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean debugCalib = prefs.getBoolean(SettingsActivity.KEY_DEBUG_CALIBRATION, false);
+        boolean cannedCalib = prefs.getBoolean(SettingsActivity.KEY_USE_CANNED_CALIBRATION, false);
+        tvCalibDebugWarning.setVisibility((debugCalib || cannedCalib) ? View.VISIBLE : View.GONE);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         // Re-check network immediately (server IP may have changed in Settings).
         updateConnectButtonState();
+        // Re-check debug-calibration settings too (may have changed in Settings).
+        updateCalibDebugWarning();
         // Live-toggle nano audio: send SET_NANO_AUDIO immediately if tracking is active.
         PreferenceManager.getDefaultSharedPreferences(this)
                 .registerOnSharedPreferenceChangeListener(nanoAudioPrefListener);

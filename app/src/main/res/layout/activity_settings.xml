@@ -328,15 +328,8 @@
                 android:layout_marginBottom="8dp"
                 android:background="?android:attr/listDivider" />
 
-            <CheckBox
-                android:id="@+id/cbEnableLogging"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="32dp"
-                android:text="Enable Detailed Tracking Logs" />
-
             <!-- ALGORITHMIC TUNING -->
-                
+
             <CheckBox
                 android:id="@+id/cbDebugCalibration"
                 android:layout_width="match_parent"

@@ -279,7 +279,26 @@
                 <Button android:id="@+id/btnModeServe" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Serve Practice" />
                 <Button android:id="@+id/btnModeRally" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Rally Practice" />
 
-                <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <!-- Warns that a debug-calibration setting is on, so a real match doesn't
+                         get run with the wrong calibration by mistake. See
+                         MainActivity.updateCalibDebugWarning(), tied to
+                         KEY_DEBUG_CALIBRATION / KEY_USE_CANNED_CALIBRATION in Settings. -->
+                    <TextView
+                        android:id="@+id/tvCalibDebugWarning"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="!"
+                        android:textSize="96sp"
+                        android:textStyle="bold"
+                        android:textColor="#F44336"
+                        android:visibility="gone" />
+                </FrameLayout>
 
                 <!-- Left Calibration Row -->
                 <LinearLayout

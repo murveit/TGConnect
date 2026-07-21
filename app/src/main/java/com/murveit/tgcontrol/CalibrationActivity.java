@@ -874,7 +874,7 @@ public class CalibrationActivity extends AppCompatActivity {
           .append(",exposureHigh=").append(prefs.getLong(SettingsActivity.KEY_EXPOSURE_HIGH, 33333L))
           .append(",aelock=").append(prefs.getBoolean(SettingsActivity.KEY_AE_LOCK, false) ? 1 : 0)
           .append(",awblock=").append(prefs.getBoolean(SettingsActivity.KEY_AWB_LOCK, false) ? 1 : 0)
-          .append(",logging=").append(prefs.getBoolean(SettingsActivity.KEY_ENABLE_LOGGING, false) ? 1 : 0)
+          .append(",logging=1") // detailed tracking logs are always on -- no longer user-toggleable
           .append(",det_thresh=").append(prefs.getInt(SettingsActivity.KEY_DET_THRESH, 50))
           .append(",use_canned=").append(prefs.getBoolean(SettingsActivity.KEY_USE_CANNED_CALIBRATION, false) ? 1 : 0);
         return sb.toString();
