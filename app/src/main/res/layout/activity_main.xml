@@ -192,12 +192,37 @@
                         android:text="Capture Photos" />
                 </LinearLayout>
 
-                <CheckBox
-                    android:id="@+id/cbUndistorted"
-                    android:layout_width="wrap_content"
+                <!-- Settings row, deliberately column-aligned with the button row above:
+                     btnRecordMode sits under Start Recording (it affects START_RECORDING only)
+                     and cbUndistorted sits under Capture Photos (it affects CAPTURE_PHOTO only),
+                     so each control lines up beneath the action it modifies. The 0dp/weight=1
+                     widths and the 4dp inner margins mirror that row exactly, so keep them in
+                     sync if the buttons above ever change. btnRecordMode's label shows the
+                     ARMED mode, not the alternative. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="4dp"
-                    android:text="Show Undistorted" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnRecordMode"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:text="4K @ 30fps" />
+
+                    <CheckBox
+                        android:id="@+id/cbUndistorted"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
+                        android:text="Show Undistorted" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"

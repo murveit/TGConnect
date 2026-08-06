@@ -103,6 +103,20 @@ public class MainActivity extends AppCompatActivity {
     
     private static final String KEY_RECORD_SESSION  = "record_session";
     private static final String KEY_SHOW_UNDISTORTED = "show_undistorted";
+    private static final String KEY_RECORD_MODE_HD = "record_mode_hd";
+
+    // --- Raw-recording capture modes (Recordings page ONLY) ---
+    // The camera's Argus driver reports exactly three sensor modes: 4032x3040@21fps,
+    // 3840x2160@30fps and 1920x1080@60fps. Only the latter two are worth offering here,
+    // so this is a two-way toggle rather than a list. The token below is the FIRST field
+    // of the START_RECORDING payload; tgserver.py turns "HD" into use_hd=True, which makes
+    // recorder.py select WIDTH_HD/HEIGHT_HD/FRAMERATE_HD ("60/1"). Any other token yields
+    // 4K@30. This toggle deliberately does NOT reach START_TRACKING or CAPTURE_PHOTO --
+    // tennis tracking always records 3840x2160@30 and stills are always taken at 4K.
+    private static final String RECORD_MODE_4K = "4K";
+    private static final String RECORD_MODE_HD = "HD";
+    private static final String RECORD_MODE_4K_LABEL = "4K @ 30fps";
+    private static final String RECORD_MODE_HD_LABEL = "HD @ 60fps";
 
     // --- Algorithmic Constants for Protocol Parsing ---
     private static final String SENSOR_ID_LEFT_STR = "0";
@@ -161,6 +175,10 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvCalibDebugWarningLabel;
     private CheckBox cbRecordSession;
     private CheckBox cbUndistorted;
+    // Recordings-page resolution/framerate toggle. Its label always shows the mode that
+    // is currently ARMED (i.e. what the next Start Recording will use), not the alternative.
+    private Button btnRecordMode;
+    private boolean recordModeHd = false;
     
     // UI Elements for Serve Plotting (SERVE_PRACTICE) and Rally Vectors (SINGLES/DOUBLES)
     private LinearLayout llServePlotContainer;
@@ -321,6 +339,7 @@ public class MainActivity extends AppCompatActivity {
         btnStartRecording = findViewById(R.id.btnStartRecording);
         btnCapturePhotos = findViewById(R.id.btnCapturePhotos);
         cbUndistorted = findViewById(R.id.cbUndistorted);
+        btnRecordMode = findViewById(R.id.btnRecordMode);
         ivImage1 = findViewById(R.id.ivImage1);
         ivImage2 = findViewById(R.id.ivImage2);
         histView1 = findViewById(R.id.histView1);
@@ -372,6 +391,17 @@ public class MainActivity extends AppCompatActivity {
             cbUndistorted.setChecked(prefs.getBoolean(KEY_SHOW_UNDISTORTED, false));
             cbUndistorted.setOnCheckedChangeListener((btn, isChecked) -> {
                 prefs.edit().putBoolean(KEY_SHOW_UNDISTORTED, isChecked).apply();
+            });
+        }
+        // Raw-recording mode toggle. Restore the last choice, then flip-and-persist on tap.
+        // Default is false (4K@30) so a fresh install behaves exactly as before this existed.
+        recordModeHd = prefs.getBoolean(KEY_RECORD_MODE_HD, false);
+        if (btnRecordMode != null) {
+            updateRecordModeLabel();
+            btnRecordMode.setOnClickListener(v -> {
+                recordModeHd = !recordModeHd;
+                prefs.edit().putBoolean(KEY_RECORD_MODE_HD, recordModeHd).apply();
+                updateRecordModeLabel();
             });
         }
         
@@ -1248,7 +1278,21 @@ public class MainActivity extends AppCompatActivity {
             btnStartRecording.setText(active ? "Stop Recording" : "Start Recording");
             btnCapturePhotos.setEnabled(!active);
             btnBack.setEnabled(!active);
+            // The sensor mode is fixed when the GStreamer pipeline is built, so switching it
+            // mid-recording would silently do nothing. Lock the toggle out for the duration.
+            if (btnRecordMode != null) btnRecordMode.setEnabled(!active);
         });
+    }
+
+    /** Paints the toggle with the mode that the next Start Recording will actually use. */
+    private void updateRecordModeLabel() {
+        if (btnRecordMode == null) return;
+        btnRecordMode.setText(recordModeHd ? RECORD_MODE_HD_LABEL : RECORD_MODE_4K_LABEL);
+    }
+
+    /** The START_RECORDING mode token for the currently armed raw-recording mode. */
+    private String currentRecordMode() {
+        return recordModeHd ? RECORD_MODE_HD : RECORD_MODE_4K;
     }
 
     private void updateTrackingButtons(boolean active) {
@@ -1612,11 +1656,21 @@ public class MainActivity extends AppCompatActivity {
         startService(intent);
     }
 
-    private String getSettingsPayload(boolean omitHeader) {
+    /**
+     * Builds the shared camera-settings tail of every command.
+     *
+     * @param header the leading mode fields to prepend verbatim, e.g. "4K,JPEG," for
+     *               START_RECORDING or "4K,JPEG,0.25," for CAPTURE_PHOTO (which carries an
+     *               extra scale field), or null for START_TRACKING which sends no header
+     *               at all. Passing the header in explicitly -- rather than emitting a
+     *               fixed one here and string-replacing it at the call site -- is what
+     *               keeps the mode toggle confined to START_RECORDING.
+     */
+    private String getSettingsPayload(String header) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         float expComp = (prefs.getInt(SettingsActivity.KEY_EXP_COMP_PROGRESS, 8) - 8) * 0.25f;
         StringBuilder sb = new StringBuilder();
-        if (!omitHeader) sb.append("4K,JPEG,");
+        if (header != null) sb.append(header);
         sb.append("exp_comp=").append(expComp)
           .append(",gain=").append(prefs.getFloat(SettingsActivity.KEY_GAIN, 1.0f))
           .append(",digital_gain=").append(prefs.getFloat(SettingsActivity.KEY_DIGITAL_GAIN, 1.0f))
@@ -1641,16 +1695,23 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String buildCaptureCommand() {
-        String base = getSettingsPayload(false)
-                .replace("4K,JPEG,", "4K,JPEG,0.25,")
-                .replace("\n", "");
+        // Stills are ALWAYS taken at 4K, independent of the raw-recording mode toggle:
+        // the still pipeline runs the sensor at 4K regardless and uses this token only to
+        // pick the base resolution that <scale> is applied to, so honouring the toggle here
+        // would just shrink the thumbnails for no benefit.
+        String base = getSettingsPayload(RECORD_MODE_4K + ",JPEG,0.25,").replace("\n", "");
         int undistort = (cbUndistorted != null && cbUndistorted.isChecked()) ? 1 : 0;
         return "CAPTURE_PHOTO:" + base + ",undistort=" + undistort + "\n";
     }
-    private String buildStartRecordingCommand() { return "START_RECORDING:" + getSettingsPayload(false); }
+    // The ONLY command that honours the Recordings-page mode toggle.
+    private String buildStartRecordingCommand() {
+        return "START_RECORDING:" + getSettingsPayload(currentRecordMode() + ",JPEG,");
+    }
     private String buildStartTrackingCommand(String m) {
+        // No header: tennis tracking always runs the 3840x2160@30 sensor mode and does its
+        // own downsampling, so the raw-recording toggle must not reach this payload.
         String recordFlag = cbRecordSession != null && cbRecordSession.isChecked() ? "RECORD=1" : "RECORD=0";
-        return "START_TRACKING:" + m + "," + recordFlag + "," + getSettingsPayload(true);
+        return "START_TRACKING:" + m + "," + recordFlag + "," + getSettingsPayload(null);
     }
     private String buildSetTimeCommand() { return "SET_TIME_MS:" + System.currentTimeMillis() + "\n"; }
 
